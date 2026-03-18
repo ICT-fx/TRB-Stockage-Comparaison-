@@ -9,7 +9,7 @@ services:
     plan: free
     envVars:
       - key: PYTHON_VERSION
-        value: "3.11"
+        value: "3.11.9"
 
   # ── Frontend Static Site ──
   - type: web
