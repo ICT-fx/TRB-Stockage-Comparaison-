@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TRB Chemedica — Comparaison de Stock</title>
+    <meta name="description" content="Outil de comparaison automatique des stocks théorique et réel pour TRB Chemedica.">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+    <!-- Header -->
+    <header id="app-header">
+        <div class="header-inner">
+            <div class="logo-group">
+                <img src="logo.png" alt="TRB Chemedica" class="header-logo" id="header-logo">
+                <span class="header-department">Supply Chain Department</span>
+            </div>
+            <div class="header-text">
+                <h1>Comparaison de Stock</h1>
+                <p class="header-subtitle">Proconcept / Stockage — Analyse automatique</p>
+            </div>
+            <div class="header-actions">
+                <span class="header-warning">Attention au respect du format</span>
+                <a href="Procedure_Comparaison_Stockage.docx" download class="btn-procedure">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                    Fiche procédure
+                </a>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main -->
+    <main id="app-main">
+
+        <!-- Upload Section -->
+        <section id="upload-section" class="card glass-card">
+            <h2 class="section-title">
+                Importer les fichiers
+            </h2>
+            
+            <div class="date-picker-container">
+                <label for="inventory-date">Date de l'inventaire :</label>
+                <input type="date" id="inventory-date" class="date-input">
+            </div>
+
+            <div class="upload-grid">
+                <div class="upload-zone" id="drop-theorique">
+                    <div class="upload-zone-inner">
+                        <h3>Extract Proconcept</h3>
+                        <p>Votre inventaire théorique</p>
+                        <label class="upload-btn" for="input-theorique">
+                            Choisir un fichier
+                        </label>
+                        <input type="file" id="input-theorique" accept=".xlsx,.xls" hidden>
+                        <p class="file-name" id="name-theorique">Aucun fichier sélectionné</p>
+                    </div>
+                </div>
+                <div class="upload-zone" id="drop-reel">
+                    <div class="upload-zone-inner">
+                        <h3>Données de l'espace de stockage</h3>
+                        <p>Inventaire physique du partenaire logistique</p>
+                        <label class="upload-btn" for="input-reel">
+                            Choisir un fichier
+                        </label>
+                        <input type="file" id="input-reel" accept=".xlsx,.xls" hidden>
+                        <p class="file-name" id="name-reel">Aucun fichier sélectionné</p>
+                    </div>
+                </div>
+            </div>
+            <button id="btn-compare" class="btn-primary" disabled>
+                Comparer les stocks
+            </button>
+        </section>
+
+        <!-- Loader -->
+        <div id="loader" class="loader hidden">
+            <div class="spinner"></div>
+            <p>Analyse en cours…</p>
+        </div>
+
+        <!-- Error -->
+        <div id="error-banner" class="error-banner hidden"></div>
+
+        <!-- Results Section -->
+        <section id="results-section" class="hidden">
+
+            <!-- Stats Cards -->
+            <div id="stats-grid" class="stats-grid"></div>
+
+            <!-- Download -->
+            <div class="download-bar">
+                <button id="btn-download" class="btn-download">
+                    Télécharger le rapport Excel
+                </button>
+            </div>
+
+            <!-- Tabs -->
+            <div class="tabs-bar" id="tabs-bar">
+                <button class="tab active" data-tab="ok">OK</button>
+                <button class="tab" data-tab="discrepancies">Écarts</button>
+                <button class="tab" data-tab="missing_actual">Manquants Réel</button>
+                <button class="tab" data-tab="missing_theoretical">Manquants Théorique</button>
+            </div>
+
+            <!-- Tab Panels -->
+            <div class="tab-panel active" id="panel-ok"></div>
+            <div class="tab-panel" id="panel-discrepancies"></div>
+            <div class="tab-panel" id="panel-missing_actual"></div>
+            <div class="tab-panel" id="panel-missing_theoretical"></div>
+        </section>
+
+    </main>
+
+    <!-- Footer -->
+    <footer id="app-footer">
+        <p>&copy; 2026 TRB Chemedica — Outil interne</p>
+    </footer>
+
+    <script src="app.js"></script>
+</body>
+</html>
