@@ -18,7 +18,6 @@ services:
     rootDir: frontend
     buildCommand: echo "No build needed"
     staticPublishPath: .
-    plan: free
     headers:
       - path: /*
         name: Cache-Control
