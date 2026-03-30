@@ -11,20 +11,22 @@ const API_BASE = window.location.hostname === "localhost" || window.location.hos
     : "https://trb-stock-compare-api.onrender.com";
 
 // ── DOM refs ────────────────────────────────────
-const inputTheorique = document.getElementById("input-theorique");
-const inputReel      = document.getElementById("input-reel");
-const dropTheorique  = document.getElementById("drop-theorique");
-const dropReel       = document.getElementById("drop-reel");
-const nameTheorique  = document.getElementById("name-theorique");
-const nameReel       = document.getElementById("name-reel");
-const btnCompare     = document.getElementById("btn-compare");
-const btnDownload    = document.getElementById("btn-download");
-const loader         = document.getElementById("loader");
-const errorBanner    = document.getElementById("error-banner");
-const resultsSection = document.getElementById("results-section");
-const statsGrid      = document.getElementById("stats-grid");
-const tabsBar        = document.getElementById("tabs-bar");
-const inventoryDate  = document.getElementById("inventory-date");
+const inputTheorique   = document.getElementById("input-theorique");
+const inputReel        = document.getElementById("input-reel");
+const dropTheorique    = document.getElementById("drop-theorique");
+const dropReel         = document.getElementById("drop-reel");
+const nameTheorique    = document.getElementById("name-theorique");
+const nameReel         = document.getElementById("name-reel");
+const btnCompare       = document.getElementById("btn-compare");
+const btnDownload      = document.getElementById("btn-download");
+const loader           = document.getElementById("loader");
+const errorBanner      = document.getElementById("error-banner");
+const resultsSection   = document.getElementById("results-section");
+const statsGrid        = document.getElementById("stats-grid");
+const tabsBar          = document.getElementById("tabs-bar");
+const inventoryDate    = document.getElementById("inventory-date");
+const layoutTheorique  = document.getElementById("layout-theorique");
+const layoutReel       = document.getElementById("layout-reel");
 
 // Default date to today
 if (inventoryDate) {
@@ -86,6 +88,8 @@ btnCompare.addEventListener("click", async () => {
         const formData = new FormData();
         formData.append("file_theorique", fileTheorique);
         formData.append("file_reel", fileReel);
+        formData.append("layout_theorique", layoutTheorique.value);
+        formData.append("layout_reel", layoutReel.value);
 
         const res = await fetch(`${API_BASE}/compare`, {
             method: "POST",
@@ -119,6 +123,8 @@ btnDownload.addEventListener("click", async () => {
         const formData = new FormData();
         formData.append("file_theorique", fileTheorique);
         formData.append("file_reel", fileReel);
+        formData.append("layout_theorique", layoutTheorique.value);
+        formData.append("layout_reel", layoutReel.value);
 
         const res = await fetch(`${API_BASE}/compare/download`, {
             method: "POST",
@@ -153,6 +159,8 @@ btnDownload.addEventListener("click", async () => {
 function renderResults(data) {
     resultsSection.classList.remove("hidden");
 
+    const hasDates = data.has_dates || false;
+
     // Stats
     const s = data.stats;
     statsGrid.innerHTML = `
@@ -168,14 +176,7 @@ function renderResults(data) {
             <div class="stat-value">${s.discrepancy_count}</div>
             <div class="stat-label">Écarts</div>
         </div>
-        <div class="stat-card red">
-            <div class="stat-value">${s.missing_actual_count}</div>
-            <div class="stat-label">Manq. stockage</div>
-        </div>
-        <div class="stat-card blue">
-            <div class="stat-value">${s.missing_theoretical_count}</div>
-            <div class="stat-label">Manq. Proconcept</div>
-        </div>
+
         <div class="stat-card rate">
             <div class="stat-value">${s.match_rate}%</div>
             <div class="stat-label">Concordance</div>
@@ -185,48 +186,55 @@ function renderResults(data) {
     // Tab counts in buttons
     document.querySelector('[data-tab="ok"]').textContent = `OK (${s.ok_count})`;
     document.querySelector('[data-tab="discrepancies"]').textContent = `Écarts (${s.discrepancy_count})`;
-    document.querySelector('[data-tab="missing_actual"]').textContent = `Manquants Réel (${s.missing_actual_count})`;
-    document.querySelector('[data-tab="missing_theoretical"]').textContent = `Manquants Théo. (${s.missing_theoretical_count})`;
+
 
     // Tables
-    renderOkTable(data.ok);
-    renderDiscrepancyTable(data.discrepancies);
-    renderMissingActualTable(data.missing_actual);
-    renderMissingTheoreticalTable(data.missing_theoretical);
+    renderOkTable(data.ok, hasDates);
+    renderDiscrepancyTable(data.discrepancies, hasDates);
+
 
     // Scroll to results
     resultsSection.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
-function renderOkTable(items) {
+function renderOkTable(items, hasDates) {
     const panel = document.getElementById("panel-ok");
     if (!items.length) { panel.innerHTML = '<div class="empty-state">Aucun produit concordant.</div>'; return; }
+
+    const dateHeader = hasDates ? `<th>Date</th>` : "";
     panel.innerHTML = `
         <table class="result-table">
-            <thead><tr><th>Code</th><th>Description</th><th>Quantité</th></tr></thead>
-            <tbody>${items.map(i => `
+            <thead><tr><th>Code</th>${dateHeader}<th>Description</th><th>Quantité</th></tr></thead>
+            <tbody>${items.map(i => {
+                const dateCell = hasDates ? `<td class="date-cell">${i.date || "—"}</td>` : "";
+                return `
                 <tr>
                     <td class="code-cell">${i.code}</td>
+                    ${dateCell}
                     <td>${i.description_theorique || i.description_reel || "—"}</td>
                     <td class="qty-cell">${i.qty_theorique.toLocaleString("fr-FR")}</td>
-                </tr>
-            `).join("")}</tbody>
+                </tr>`;
+            }).join("")}</tbody>
         </table>
     `;
 }
 
-function renderDiscrepancyTable(items) {
+function renderDiscrepancyTable(items, hasDates) {
     const panel = document.getElementById("panel-discrepancies");
     if (!items.length) { panel.innerHTML = '<div class="empty-state">Aucun écart détecté.</div>'; return; }
+
+    const dateHeader = hasDates ? `<th>Date</th>` : "";
     panel.innerHTML = `
         <table class="result-table">
-            <thead><tr><th>Code</th><th>Description</th><th>Qté Théorique</th><th>Qté Réelle</th><th>Delta</th></tr></thead>
+            <thead><tr><th>Code</th>${dateHeader}<th>Description</th><th>Qté Théorique</th><th>Qté Réelle</th><th>Delta</th></tr></thead>
             <tbody>${items.map(i => {
                 const cls = i.delta > 0 ? "delta-positive" : "delta-negative";
                 const sign = i.delta > 0 ? "+" : "";
+                const dateCell = hasDates ? `<td class="date-cell">${i.date || "—"}</td>` : "";
                 return `
                 <tr>
                     <td class="code-cell">${i.code}</td>
+                    ${dateCell}
                     <td>${i.description_theorique || i.description_reel || "—"}</td>
                     <td class="qty-cell">${i.qty_theorique.toLocaleString("fr-FR")}</td>
                     <td class="qty-cell">${i.qty_reel.toLocaleString("fr-FR")}</td>
@@ -237,39 +245,6 @@ function renderDiscrepancyTable(items) {
     `;
 }
 
-function renderMissingActualTable(items) {
-    const panel = document.getElementById("panel-missing_actual");
-    if (!items.length) { panel.innerHTML = '<div class="empty-state">Tous les produits théoriques sont présents dans le stock réel.</div>'; return; }
-    panel.innerHTML = `
-        <table class="result-table">
-            <thead><tr><th>Code</th><th>Description</th><th>Qté Théorique</th></tr></thead>
-            <tbody>${items.map(i => `
-                <tr>
-                    <td class="code-cell">${i.code}</td>
-                    <td>${i.description || "—"}</td>
-                    <td class="qty-cell">${i.qty_theorique.toLocaleString("fr-FR")}</td>
-                </tr>
-            `).join("")}</tbody>
-        </table>
-    `;
-}
-
-function renderMissingTheoreticalTable(items) {
-    const panel = document.getElementById("panel-missing_theoretical");
-    if (!items.length) { panel.innerHTML = '<div class="empty-state">Tous les produits réels sont présents dans le stock théorique.</div>'; return; }
-    panel.innerHTML = `
-        <table class="result-table">
-            <thead><tr><th>Code</th><th>Description</th><th>Qté Réelle</th></tr></thead>
-            <tbody>${items.map(i => `
-                <tr>
-                    <td class="code-cell">${i.code}</td>
-                    <td>${i.description || "—"}</td>
-                    <td class="qty-cell">${i.qty_reel.toLocaleString("fr-FR")}</td>
-                </tr>
-            `).join("")}</tbody>
-        </table>
-    `;
-}
 
 // ── Tabs ────────────────────────────────────────
 tabsBar.addEventListener("click", (e) => {

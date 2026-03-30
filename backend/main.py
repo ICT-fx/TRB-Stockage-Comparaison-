@@ -1,6 +1,7 @@
 """
 TRB Chemedica — Stock Comparison API
 Compare theoretical (Proconcept) vs actual (RK Logistik) inventory.
+Supports both original and new layout formats with date-based comparison.
 """
 
 import io
@@ -9,7 +10,7 @@ import zipfile
 from typing import Any
 
 import pandas as pd
-from fastapi import FastAPI, File, UploadFile, HTTPException
+from fastapi import FastAPI, File, Form, UploadFile, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from openpyxl import Workbook
@@ -41,22 +42,44 @@ def _is_numeric_code(val: Any) -> bool:
     return bool(re.fullmatch(r"\d+", s))
 
 
+def _format_date_yyyymmdd(val: Any) -> str:
+    """Convert a YYYYMMDD integer (e.g. 20280731) to DD.MM.YYYY string."""
+    s = str(int(val))
+    if len(s) == 8:
+        return f"{s[6:8]}.{s[4:6]}.{s[0:4]}"
+    return s
+
+
+def _format_date_generic(val: Any) -> str:
+    """Convert various date formats to DD.MM.YYYY string."""
+    if pd.isna(val):
+        return ""
+    # Already a datetime object
+    if hasattr(val, "strftime"):
+        return val.strftime("%d.%m.%Y")
+    # String like "2028-04-30" or similar
+    s = str(val).strip()
+    try:
+        dt = pd.to_datetime(s)
+        return dt.strftime("%d.%m.%Y")
+    except Exception:
+        return s
+
+
+# ──────────────────────────────────────────────
+# Original parsers (aggregate by code only)
+# ──────────────────────────────────────────────
+
 def parse_proconcept(raw_bytes: bytes) -> dict[str, dict]:
     """
-    Parse the Proconcept (theoretical stock) Excel.
-
-    Relevant rows have a numeric product code in column E ('Référence principale')
-    and a quantity in column F ('La somme totale de Qté effective').
-    Multiple rows with the same code (different expiry dates) are summed.
-    The product description comes from column C ('Description courte') of the
-    *first* row for that code that has a non-empty description.
+    Parse the Proconcept (theoretical stock) Excel — ORIGINAL layout.
+    Code in column E, quantity in column F. Aggregates by code.
     """
     df = pd.read_excel(io.BytesIO(raw_bytes), header=0)
 
-    # Columns by position (E=4, F=5, C=2)
-    col_code = df.columns[4]  # Référence principale
-    col_qty  = df.columns[5]  # Qté effective
-    col_desc = df.columns[2]  # Description courte
+    col_code = df.columns[4]  # E: Référence principale
+    col_qty  = df.columns[5]  # F: Qté effective
+    col_desc = df.columns[2]  # C: Description courte
 
     products: dict[str, dict] = {}
 
@@ -80,18 +103,14 @@ def parse_proconcept(raw_bytes: bytes) -> dict[str, dict]:
 
 def parse_rk_logistik(raw_bytes: bytes) -> dict[str, dict]:
     """
-    Parse the RK Logistik (actual stock) Excel.
-
-    Relevant rows have a numeric product code in column A ('Lagerort')
-    and a quantity in column F ('Bestand').
-    Header is on the 1st row (index 0, 0-indexed).
-    Multiple rows with the same code (different lots) are summed.
+    Parse the RK Logistik (actual stock) Excel — ORIGINAL layout.
+    Code in column A, quantity in column F. Aggregates by code.
     """
     df = pd.read_excel(io.BytesIO(raw_bytes), header=0)
 
-    col_code = df.columns[0]  # Lagerort
-    col_qty  = df.columns[5]  # Bestand
-    col_desc = df.columns[4]  # Kurztext
+    col_code = df.columns[0]  # A: Lagerort
+    col_qty  = df.columns[5]  # F: Bestand
+    col_desc = df.columns[4]  # E: Kurztext
 
     products: dict[str, dict] = {}
 
@@ -113,17 +132,91 @@ def parse_rk_logistik(raw_bytes: bytes) -> dict[str, dict]:
     return products
 
 
+# ──────────────────────────────────────────────
+# New parsers (keep individual rows with dates)
+# ──────────────────────────────────────────────
+
+def parse_proconcept_vcarole_cfh(raw_bytes: bytes) -> list[dict]:
+    """
+    Parse Proconcept Vcarole CFH layout.
+    Code in column C (idx 2), date in column F (idx 5, YYYYMMDD int),
+    quantity in column H (idx 7).
+    Returns a list of {code, date, qty, description} — NOT aggregated.
+    """
+    df = pd.read_excel(io.BytesIO(raw_bytes), header=0)
+
+    col_code = df.columns[2]  # C: Référence principale
+    col_date = df.columns[5]  # F: Chronologie (YYYYMMDD)
+    col_qty  = df.columns[7]  # H: Qté
+
+    products: list[dict] = []
+
+    for _, row in df.iterrows():
+        code_raw = row[col_code]
+        if not _is_numeric_code(code_raw):
+            continue
+        code = str(int(float(str(code_raw))))
+        qty = int(row[col_qty]) if pd.notna(row[col_qty]) else 0
+        date_str = _format_date_yyyymmdd(row[col_date]) if pd.notna(row[col_date]) else ""
+
+        products.append({
+            "code": code,
+            "date": date_str,
+            "qty": qty,
+            "description": "",  # No description column in this layout
+        })
+
+    return products
+
+
+def parse_rk_temporaire(raw_bytes: bytes) -> list[dict]:
+    """
+    Parse RK temporaire layout.
+    Code in column C (idx 2), quantity in column G (idx 6),
+    date in column H (idx 7).
+    Returns a list of {code, date, qty, description} — NOT aggregated.
+    """
+    df = pd.read_excel(io.BytesIO(raw_bytes), header=0)
+
+    col_code = df.columns[2]  # C: Artikel Nr.
+    col_qty  = df.columns[6]  # G: Lagermenge
+    col_date = df.columns[7]  # H: Expiry date
+    col_desc = df.columns[3]  # D: Kurztext
+
+    products: list[dict] = []
+
+    for _, row in df.iterrows():
+        code_raw = row[col_code]
+        if not _is_numeric_code(code_raw):
+            continue
+        code = str(int(float(str(code_raw))))
+        qty = int(row[col_qty]) if pd.notna(row[col_qty]) else 0
+        date_str = _format_date_generic(row[col_date])
+        desc = str(row[col_desc]).strip() if pd.notna(row[col_desc]) else ""
+
+        products.append({
+            "code": code,
+            "date": date_str,
+            "qty": qty,
+            "description": desc,
+        })
+
+    return products
+
+
+# ──────────────────────────────────────────────
+# Comparison logic
+# ──────────────────────────────────────────────
+
 def compare_stocks(
     theoretical: dict[str, dict],
     actual: dict[str, dict],
 ) -> dict:
-    """
-    Compare two stock dictionaries and return categorised results.
-    """
+    """Compare two stock dictionaries by code only (original mode)."""
     ok = []
     discrepancies = []
-    missing_actual = []    # in theoretical but not in actual
-    missing_theoretical = []  # in actual but not in theoretical
+    missing_actual = []
+    missing_theoretical = []
 
     all_codes = set(theoretical) | set(actual)
 
@@ -148,32 +241,197 @@ def compare_stocks(
             else:
                 discrepancies.append(entry)
         elif in_theo and not in_real:
-            missing_actual.append({
+            qty_theo = theoretical[code]["qty"]
+            qty_real = 0
+            discrepancies.append({
                 "code": code,
-                "description": theoretical[code]["description"],
-                "qty_theorique": theoretical[code]["qty"],
+                "description_theorique": theoretical[code]["description"],
+                "description_reel": "",
+                "qty_theorique": qty_theo,
+                "qty_reel": qty_real,
+                "delta": qty_real - qty_theo,
             })
         else:
-            missing_theoretical.append({
+            qty_theo = 0
+            qty_real = actual[code]["qty"]
+            discrepancies.append({
                 "code": code,
-                "description": actual[code]["description"],
-                "qty_reel": actual[code]["qty"],
+                "description_theorique": "",
+                "description_reel": actual[code]["description"],
+                "qty_theorique": qty_theo,
+                "qty_reel": qty_real,
+                "delta": qty_real - qty_theo,
             })
 
     stats = {
         "total_products": len(all_codes),
         "ok_count": len(ok),
         "discrepancy_count": len(discrepancies),
-        "missing_actual_count": len(missing_actual),
-        "missing_theoretical_count": len(missing_theoretical),
+        "missing_actual_count": 0,
+        "missing_theoretical_count": 0,
         "match_rate": round(len(ok) / len(all_codes) * 100, 1) if all_codes else 0,
     }
 
     return {
+        "has_dates": False,
         "ok": ok,
         "discrepancies": discrepancies,
-        "missing_actual": missing_actual,
-        "missing_theoretical": missing_theoretical,
+        "missing_actual": [],
+        "missing_theoretical": [],
+        "stats": stats,
+    }
+
+
+DATE_TOLERANCE_DAYS = 92  # Max days between Proconcept and RK dates to consider a match (~3 months)
+
+
+def _parse_ddmmyyyy(date_str: str):
+    """Parse a DD.MM.YYYY string to a date object, or None if invalid."""
+    from datetime import datetime
+    try:
+        return datetime.strptime(date_str, "%d.%m.%Y").date()
+    except Exception:
+        return None
+
+
+def compare_stocks_by_date(
+    theoretical: list[dict],
+    actual: list[dict],
+) -> dict:
+    """
+    Compare two stock lists by code + date with a ±31-day tolerance window.
+    For each (code, date) in Proconcept, we look for the closest date in RK
+    for the same code within DATE_TOLERANCE_DAYS. If found, they are matched.
+    """
+    from datetime import timedelta
+
+    # Build lookup: code → list of {date_str, date_obj, qty, description}
+    def _build_map(items: list[dict]) -> dict[str, list[dict]]:
+        m: dict[str, list[dict]] = {}
+        for item in items:
+            code = item["code"]
+            date_obj = _parse_ddmmyyyy(item["date"])
+            entry = {**item, "date_obj": date_obj, "matched": False}
+            m.setdefault(code, []).append(entry)
+        # Aggregate duplicate (code+date) entries
+        aggregated: dict[str, list[dict]] = {}
+        for code, entries in m.items():
+            deduped: dict[str, dict] = {}
+            for e in entries:
+                k = e["date"]
+                if k in deduped:
+                    deduped[k]["qty"] += e["qty"]
+                else:
+                    deduped[k] = {**e}
+            aggregated[code] = list(deduped.values())
+        return aggregated
+
+    theo_by_code = _build_map(theoretical)
+    actual_by_code = _build_map(actual)
+
+    ok = []
+    discrepancies = []
+    missing_actual = []
+    missing_theoretical = []
+
+    all_codes = sorted(set(theo_by_code) | set(actual_by_code))
+
+    for code in all_codes:
+        theo_entries = theo_by_code.get(code, [])
+        actual_entries = actual_by_code.get(code, [])
+
+        # For each theoretical entry, try to find a matching actual entry
+        for t in theo_entries:
+            best_match = None
+            best_diff = None
+
+            if t["date_obj"] is not None:
+                for a in actual_entries:
+                    if a["matched"]:
+                        continue
+                    if a["date_obj"] is None:
+                        continue
+                    diff = abs((t["date_obj"] - a["date_obj"]).days)
+                    if diff <= DATE_TOLERANCE_DAYS:
+                        if best_diff is None or diff < best_diff:
+                            best_diff = diff
+                            best_match = a
+            elif not actual_entries:
+                pass  # dealt with below
+            else:
+                # No date in theoretical — try exact string match
+                for a in actual_entries:
+                    if not a["matched"] and a["date"] == t["date"]:
+                        best_match = a
+                        best_diff = 0
+                        break
+
+            if best_match is not None:
+                best_match["matched"] = True
+                qty_theo = t["qty"]
+                qty_real = best_match["qty"]
+                delta = qty_real - qty_theo
+                # Show Proconcept date + RK date if they differ
+                date_display = t["date"]
+                if best_diff and best_diff > 0:
+                    date_display = f"{t['date']} (RK: {best_match['date']})"
+                entry = {
+                    "code": code,
+                    "date": date_display,
+                    "description_theorique": t.get("description", ""),
+                    "description_reel": best_match.get("description", ""),
+                    "qty_theorique": qty_theo,
+                    "qty_reel": qty_real,
+                    "delta": delta,
+                }
+                if delta == 0:
+                    ok.append(entry)
+                else:
+                    discrepancies.append(entry)
+            else:
+                qty_theo = t["qty"]
+                qty_real = 0
+                discrepancies.append({
+                    "code": code,
+                    "date": t["date"],
+                    "description_theorique": t.get("description", ""),
+                    "description_reel": "",
+                    "qty_theorique": qty_theo,
+                    "qty_reel": qty_real,
+                    "delta": qty_real - qty_theo,
+                })
+
+        # Remaining unmatched actual entries → missing from theoretical
+        for a in actual_entries:
+            if not a["matched"]:
+                qty_theo = 0
+                qty_real = a["qty"]
+                discrepancies.append({
+                    "code": code,
+                    "date": a["date"],
+                    "description_theorique": "",
+                    "description_reel": a.get("description", ""),
+                    "qty_theorique": qty_theo,
+                    "qty_reel": qty_real,
+                    "delta": qty_real - qty_theo,
+                })
+
+    total = len(ok) + len(discrepancies)
+    stats = {
+        "total_products": total,
+        "ok_count": len(ok),
+        "discrepancy_count": len(discrepancies),
+        "missing_actual_count": 0,
+        "missing_theoretical_count": 0,
+        "match_rate": round(len(ok) / total * 100, 1) if total else 0,
+    }
+
+    return {
+        "has_dates": True,
+        "ok": ok,
+        "discrepancies": discrepancies,
+        "missing_actual": [],
+        "missing_theoretical": [],
         "stats": stats,
     }
 
@@ -216,45 +474,51 @@ def _auto_width(ws):
 def build_excel(result: dict) -> bytes:
     """Build a styled .xlsx workbook from comparison results."""
     wb = Workbook()
+    has_dates = result.get("has_dates", False)
 
     # ----- OK -----
     ws_ok = wb.active
     ws_ok.title = "OK"
-    ws_ok.append(["Code", "Description", "Quantité"])
-    for item in result["ok"]:
-        ws_ok.append([item["code"], item["description_theorique"] or item["description_reel"], item["qty_theorique"]])
-    _style_header(ws_ok, "2E7D32", 3)  # green
+    if has_dates:
+        ws_ok.append(["Code", "Date", "Description", "Quantité"])
+        for item in result["ok"]:
+            ws_ok.append([item["code"], item.get("date", ""), item.get("description_theorique") or item.get("description_reel", ""), item["qty_theorique"]])
+        _style_header(ws_ok, "2E7D32", 4)
+    else:
+        ws_ok.append(["Code", "Description", "Quantité"])
+        for item in result["ok"]:
+            ws_ok.append([item["code"], item.get("description_theorique") or item.get("description_reel", ""), item["qty_theorique"]])
+        _style_header(ws_ok, "2E7D32", 3)
     _auto_width(ws_ok)
 
     # ----- Écarts -----
     ws_disc = wb.create_sheet("Écarts")
-    ws_disc.append(["Code", "Description", "Qté Théorique", "Qté Réelle", "Delta"])
-    for item in result["discrepancies"]:
-        ws_disc.append([
-            item["code"],
-            item["description_theorique"] or item["description_reel"],
-            item["qty_theorique"],
-            item["qty_reel"],
-            item["delta"],
-        ])
-    _style_header(ws_disc, "F57F17", 5)  # orange
+    if has_dates:
+        ws_disc.append(["Code", "Date", "Description", "Qté Proconcept", "Qté Réelle", "Delta"])
+        for item in result["discrepancies"]:
+            ws_disc.append([
+                item["code"],
+                item.get("date", ""),
+                item.get("description_theorique") or item.get("description_reel", ""),
+                item["qty_theorique"],
+                item["qty_reel"],
+                item["delta"],
+            ])
+        _style_header(ws_disc, "F57F17", 6)
+    else:
+        ws_disc.append(["Code", "Description", "Qté Proconcept", "Qté Réelle", "Delta"])
+        for item in result["discrepancies"]:
+            ws_disc.append([
+                item["code"],
+                item.get("description_theorique") or item.get("description_reel", ""),
+                item["qty_theorique"],
+                item["qty_reel"],
+                item["delta"],
+            ])
+        _style_header(ws_disc, "F57F17", 5)
     _auto_width(ws_disc)
 
-    # ----- Manquants Réel -----
-    ws_mr = wb.create_sheet("Manquants Réel")
-    ws_mr.append(["Code", "Description", "Qté Théorique"])
-    for item in result["missing_actual"]:
-        ws_mr.append([item["code"], item["description"], item["qty_theorique"]])
-    _style_header(ws_mr, "C62828", 3)  # red
-    _auto_width(ws_mr)
 
-    # ----- Manquants Théorique -----
-    ws_mt = wb.create_sheet("Manquants Théorique")
-    ws_mt.append(["Code", "Description", "Qté Réelle"])
-    for item in result["missing_theoretical"]:
-        ws_mt.append([item["code"], item["description"], item["qty_reel"]])
-    _style_header(ws_mt, "1565C0", 3)  # blue
-    _auto_width(ws_mt)
 
     buf = io.BytesIO()
     wb.save(buf)
@@ -266,20 +530,56 @@ def build_excel(result: dict) -> bytes:
 # API Routes
 # ──────────────────────────────────────────────
 
+def _run_comparison(theo_bytes: bytes, real_bytes: bytes,
+                    layout_theorique: str, layout_reel: str) -> dict:
+    """Select the right parsers and comparison logic based on layouts."""
+    # Determine if we use date-based comparison
+    use_dates = (layout_theorique == "proconcept_vcarole_cfh" or
+                 layout_reel == "rk_temporaire")
+
+    if use_dates:
+        # Parse into lists with dates
+        if layout_theorique == "proconcept_vcarole_cfh":
+            theo_list = parse_proconcept_vcarole_cfh(theo_bytes)
+        else:
+            # Convert original dict format to list format for compatibility
+            theo_dict = parse_proconcept(theo_bytes)
+            theo_list = [
+                {"code": code, "date": "", "qty": data["qty"], "description": data["description"]}
+                for code, data in theo_dict.items()
+            ]
+
+        if layout_reel == "rk_temporaire":
+            actual_list = parse_rk_temporaire(real_bytes)
+        else:
+            actual_dict = parse_rk_logistik(real_bytes)
+            actual_list = [
+                {"code": code, "date": "", "qty": data["qty"], "description": data["description"]}
+                for code, data in actual_dict.items()
+            ]
+
+        return compare_stocks_by_date(theo_list, actual_list)
+    else:
+        # Original code-only comparison
+        theoretical = parse_proconcept(theo_bytes)
+        actual = parse_rk_logistik(real_bytes)
+        return compare_stocks(theoretical, actual)
+
+
 @app.post("/compare")
 async def compare(
     file_theorique: UploadFile = File(...),
     file_reel: UploadFile = File(...),
+    layout_theorique: str = Form("original"),
+    layout_reel: str = Form("original"),
 ):
     """Compare two Excel files and return JSON results."""
     try:
         theo_bytes = await file_theorique.read()
         real_bytes = await file_reel.read()
 
-        theoretical = parse_proconcept(theo_bytes)
-        actual = parse_rk_logistik(real_bytes)
-        result = compare_stocks(theoretical, actual)
-
+        result = _run_comparison(theo_bytes, real_bytes,
+                                 layout_theorique, layout_reel)
         return result
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Erreur lors du traitement : {str(e)}")
@@ -289,16 +589,16 @@ async def compare(
 async def compare_download(
     file_theorique: UploadFile = File(...),
     file_reel: UploadFile = File(...),
+    layout_theorique: str = Form("original"),
+    layout_reel: str = Form("original"),
 ):
     """Compare two Excel files and return an Excel report."""
     try:
         theo_bytes = await file_theorique.read()
         real_bytes = await file_reel.read()
 
-        theoretical = parse_proconcept(theo_bytes)
-        actual = parse_rk_logistik(real_bytes)
-        result = compare_stocks(theoretical, actual)
-
+        result = _run_comparison(theo_bytes, real_bytes,
+                                 layout_theorique, layout_reel)
         excel_bytes = build_excel(result)
 
         return StreamingResponse(

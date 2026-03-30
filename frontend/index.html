@@ -17,11 +17,9 @@
         <div class="header-inner">
             <div class="logo-group">
                 <img src="logo.png" alt="TRB Chemedica" class="header-logo" id="header-logo">
-                <span class="header-department">Supply Chain Department</span>
+                <span class="header-department">Supply Chain Department - Comparaison de Stock</span>
             </div>
-            <div class="header-text">
-                <h1>Comparaison de Stock</h1>
-                <p class="header-subtitle">Proconcept / Stockage — Analyse automatique</p>
+            <div class="header-text" style="flex: 1;">
             </div>
             <div class="header-actions">
                 <span class="header-warning">Attention au respect du format</span>
@@ -52,6 +50,13 @@
                     <div class="upload-zone-inner">
                         <h3>Extract Proconcept</h3>
                         <p>Votre inventaire théorique</p>
+                        <div class="layout-selector">
+                            <label for="layout-theorique">Mise en page :</label>
+                            <select id="layout-theorique" class="layout-select">
+                                <option value="original">Proconcept (original)</option>
+                                <option value="proconcept_vcarole_cfh">Proconcept Vcarole CFH</option>
+                            </select>
+                        </div>
                         <label class="upload-btn" for="input-theorique">
                             Choisir un fichier
                         </label>
@@ -63,6 +68,13 @@
                     <div class="upload-zone-inner">
                         <h3>Données de l'espace de stockage</h3>
                         <p>Inventaire physique du partenaire logistique</p>
+                        <div class="layout-selector">
+                            <label for="layout-reel">Mise en page :</label>
+                            <select id="layout-reel" class="layout-select">
+                                <option value="original">RK Logistik (original)</option>
+                                <option value="rk_temporaire">RK temporaire</option>
+                            </select>
+                        </div>
                         <label class="upload-btn" for="input-reel">
                             Choisir un fichier
                         </label>
@@ -102,15 +114,11 @@
             <div class="tabs-bar" id="tabs-bar">
                 <button class="tab active" data-tab="ok">OK</button>
                 <button class="tab" data-tab="discrepancies">Écarts</button>
-                <button class="tab" data-tab="missing_actual">Manquants Réel</button>
-                <button class="tab" data-tab="missing_theoretical">Manquants Théorique</button>
             </div>
 
             <!-- Tab Panels -->
             <div class="tab-panel active" id="panel-ok"></div>
             <div class="tab-panel" id="panel-discrepancies"></div>
-            <div class="tab-panel" id="panel-missing_actual"></div>
-            <div class="tab-panel" id="panel-missing_theoretical"></div>
         </section>
 
     </main>
