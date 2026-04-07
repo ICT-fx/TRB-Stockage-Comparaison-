@@ -201,7 +201,7 @@ function renderOkTable(items, hasDates) {
     const panel = document.getElementById("panel-ok");
     if (!items.length) { panel.innerHTML = '<div class="empty-state">Aucun produit concordant.</div>'; return; }
 
-    const dateHeader = hasDates ? `<th>Date</th>` : "";
+    const dateHeader = hasDates ? `<th>Date péremption</th>` : "";
     panel.innerHTML = `
         <table class="result-table">
             <thead><tr><th>Code</th>${dateHeader}<th>Description</th><th>Quantité</th></tr></thead>
@@ -223,7 +223,7 @@ function renderDiscrepancyTable(items, hasDates) {
     const panel = document.getElementById("panel-discrepancies");
     if (!items.length) { panel.innerHTML = '<div class="empty-state">Aucun écart détecté.</div>'; return; }
 
-    const dateHeader = hasDates ? `<th>Date</th>` : "";
+    const dateHeader = hasDates ? `<th>Date péremption</th>` : "";
     panel.innerHTML = `
         <table class="result-table">
             <thead><tr><th>Code</th>${dateHeader}<th>Description</th><th>Qté Théorique</th><th>Qté Réelle</th><th>Delta</th></tr></thead>

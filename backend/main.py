@@ -66,53 +66,82 @@ def _format_date_generic(val: Any) -> str:
         return s
 
 
+def _parse_rk_date(val: Any) -> str:
+    """Parse RK Logistik date formats to DD.MM.YYYY.
+    Handles: '2028-03' (YYYY-MM), '2028-01-12 00:00:00' (datetime string), pandas Timestamp.
+    YYYY-MM dates are normalized to the 1st of the month.
+    """
+    if pd.isna(val):
+        return ""
+    if hasattr(val, "strftime"):  # pandas Timestamp
+        return val.strftime("%d.%m.%Y")
+    s = str(val).strip()
+    # Format YYYY-MM (month only, e.g. "2028-03")
+    if re.fullmatch(r"\d{4}-\d{2}", s):
+        return f"01.{s[5:7]}.{s[0:4]}"
+    # Format YYYY-MM-DD or YYYY-MM-DD HH:MM:SS
+    try:
+        dt = pd.to_datetime(s)
+        return dt.strftime("%d.%m.%Y")
+    except Exception:
+        return s
+
+
 # ──────────────────────────────────────────────
 # Original parsers (aggregate by code only)
 # ──────────────────────────────────────────────
 
-def parse_proconcept(raw_bytes: bytes) -> dict[str, dict]:
+def parse_proconcept(raw_bytes: bytes) -> list[dict]:
     """
     Parse the Proconcept (theoretical stock) Excel — ORIGINAL layout.
-    Code in column E, quantity in column F. Aggregates by code.
+    Date in column D (YYYYMMDD), code in column E, quantity in column F.
+    Returns one row per lot (code + expiry date), not aggregated.
     """
     df = pd.read_excel(io.BytesIO(raw_bytes), header=0)
 
+    col_desc = df.columns[2]  # C: Description courte
+    col_date = df.columns[3]  # D: Chronologie (YYYYMMDD int)
     col_code = df.columns[4]  # E: Référence principale
     col_qty  = df.columns[5]  # F: Qté effective
-    col_desc = df.columns[2]  # C: Description courte
 
-    products: dict[str, dict] = {}
+    # Forward-fill descriptions so that sub-rows of a product inherit it
+    df[col_desc] = df[col_desc].ffill()
+
+    products: list[dict] = []
 
     for _, row in df.iterrows():
         code_raw = row[col_code]
+        date_raw = row[col_date]
         if not _is_numeric_code(code_raw):
             continue
+        # Skip subtotal rows (date is a string like "20280531 Total") and NaN dates
+        if pd.isna(date_raw) or not str(date_raw).strip().replace(".0", "").isdigit():
+            continue
+
         code = str(int(float(str(code_raw))))
         qty = int(row[col_qty]) if pd.notna(row[col_qty]) else 0
         desc = str(row[col_desc]).strip() if pd.notna(row[col_desc]) else ""
+        date_str = _format_date_yyyymmdd(date_raw)
 
-        if code in products:
-            products[code]["qty"] += qty
-            if not products[code]["description"] and desc:
-                products[code]["description"] = desc
-        else:
-            products[code] = {"qty": qty, "description": desc}
+        products.append({"code": code, "date": date_str, "qty": qty, "description": desc})
 
     return products
 
 
-def parse_rk_logistik(raw_bytes: bytes) -> dict[str, dict]:
+def parse_rk_logistik(raw_bytes: bytes) -> list[dict]:
     """
     Parse the RK Logistik (actual stock) Excel — ORIGINAL layout.
-    Code in column A, quantity in column F. Aggregates by code.
+    Code in column A, date in column C (YYYY-MM or YYYY-MM-DD), quantity in column F.
+    Returns one row per lot (code + expiry date), not aggregated.
     """
     df = pd.read_excel(io.BytesIO(raw_bytes), header=0)
 
-    col_code = df.columns[0]  # A: Lagerort
-    col_qty  = df.columns[5]  # F: Bestand
+    col_code = df.columns[0]  # A: Lagerort (SKU)
+    col_date = df.columns[2]  # C: Expiry date (various formats)
     col_desc = df.columns[4]  # E: Kurztext
+    col_qty  = df.columns[5]  # F: Bestand
 
-    products: dict[str, dict] = {}
+    products: list[dict] = []
 
     for _, row in df.iterrows():
         code_raw = row[col_code]
@@ -121,13 +150,9 @@ def parse_rk_logistik(raw_bytes: bytes) -> dict[str, dict]:
         code = str(int(float(str(code_raw))))
         qty = int(row[col_qty]) if pd.notna(row[col_qty]) else 0
         desc = str(row[col_desc]).strip() if pd.notna(row[col_desc]) else ""
+        date_str = _parse_rk_date(row[col_date])
 
-        if code in products:
-            products[code]["qty"] += qty
-            if not products[code]["description"] and desc:
-                products[code]["description"] = desc
-        else:
-            products[code] = {"qty": qty, "description": desc}
+        products.append({"code": code, "date": date_str, "qty": qty, "description": desc})
 
     return products
 
@@ -282,9 +307,6 @@ def compare_stocks(
     }
 
 
-DATE_TOLERANCE_DAYS = 92  # Max days between Proconcept and RK dates to consider a match (~3 months)
-
-
 def _parse_ddmmyyyy(date_str: str):
     """Parse a DD.MM.YYYY string to a date object, or None if invalid."""
     from datetime import datetime
@@ -297,11 +319,12 @@ def _parse_ddmmyyyy(date_str: str):
 def compare_stocks_by_date(
     theoretical: list[dict],
     actual: list[dict],
+    tolerance_days: int = 92,
 ) -> dict:
     """
-    Compare two stock lists by code + date with a ±31-day tolerance window.
+    Compare two stock lists by code + expiry date with a tolerance window.
     For each (code, date) in Proconcept, we look for the closest date in RK
-    for the same code within DATE_TOLERANCE_DAYS. If found, they are matched.
+    for the same code within tolerance_days. If found, they are matched.
     """
     from datetime import timedelta
 
@@ -352,7 +375,7 @@ def compare_stocks_by_date(
                     if a["date_obj"] is None:
                         continue
                     diff = abs((t["date_obj"] - a["date_obj"]).days)
-                    if diff <= DATE_TOLERANCE_DAYS:
+                    if diff <= tolerance_days:
                         if best_diff is None or diff < best_diff:
                             best_diff = diff
                             best_match = a
@@ -480,7 +503,7 @@ def build_excel(result: dict) -> bytes:
     ws_ok = wb.active
     ws_ok.title = "OK"
     if has_dates:
-        ws_ok.append(["Code", "Date", "Description", "Quantité"])
+        ws_ok.append(["Code", "Date péremption", "Description", "Quantité"])
         for item in result["ok"]:
             ws_ok.append([item["code"], item.get("date", ""), item.get("description_theorique") or item.get("description_reel", ""), item["qty_theorique"]])
         _style_header(ws_ok, "2E7D32", 4)
@@ -494,7 +517,7 @@ def build_excel(result: dict) -> bytes:
     # ----- Écarts -----
     ws_disc = wb.create_sheet("Écarts")
     if has_dates:
-        ws_disc.append(["Code", "Date", "Description", "Qté Proconcept", "Qté Réelle", "Delta"])
+        ws_disc.append(["Code", "Date péremption", "Description", "Qté Proconcept", "Qté Réelle", "Delta"])
         for item in result["discrepancies"]:
             ws_disc.append([
                 item["code"],
@@ -533,37 +556,27 @@ def build_excel(result: dict) -> bytes:
 def _run_comparison(theo_bytes: bytes, real_bytes: bytes,
                     layout_theorique: str, layout_reel: str) -> dict:
     """Select the right parsers and comparison logic based on layouts."""
-    # Determine if we use date-based comparison
-    use_dates = (layout_theorique == "proconcept_vcarole_cfh" or
-                 layout_reel == "rk_temporaire")
+    use_legacy = (layout_theorique == "proconcept_vcarole_cfh" or
+                  layout_reel == "rk_temporaire")
 
-    if use_dates:
-        # Parse into lists with dates
+    if use_legacy:
+        # Legacy date-based parsers (vcarole / temporaire formats)
         if layout_theorique == "proconcept_vcarole_cfh":
             theo_list = parse_proconcept_vcarole_cfh(theo_bytes)
         else:
-            # Convert original dict format to list format for compatibility
-            theo_dict = parse_proconcept(theo_bytes)
-            theo_list = [
-                {"code": code, "date": "", "qty": data["qty"], "description": data["description"]}
-                for code, data in theo_dict.items()
-            ]
+            theo_list = parse_proconcept(theo_bytes)
 
         if layout_reel == "rk_temporaire":
             actual_list = parse_rk_temporaire(real_bytes)
         else:
-            actual_dict = parse_rk_logistik(real_bytes)
-            actual_list = [
-                {"code": code, "date": "", "qty": data["qty"], "description": data["description"]}
-                for code, data in actual_dict.items()
-            ]
+            actual_list = parse_rk_logistik(real_bytes)
 
-        return compare_stocks_by_date(theo_list, actual_list)
+        return compare_stocks_by_date(theo_list, actual_list, tolerance_days=92)
     else:
-        # Original code-only comparison
-        theoretical = parse_proconcept(theo_bytes)
-        actual = parse_rk_logistik(real_bytes)
-        return compare_stocks(theoretical, actual)
+        # Original layout: compare by code + expiry date, 2-month tolerance
+        theo_list = parse_proconcept(theo_bytes)
+        actual_list = parse_rk_logistik(real_bytes)
+        return compare_stocks_by_date(theo_list, actual_list, tolerance_days=61)
 
 
 @app.post("/compare")
