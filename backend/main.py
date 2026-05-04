@@ -618,24 +618,75 @@ def build_excel(result: dict) -> bytes:
 # API Routes
 # ──────────────────────────────────────────────
 
+def _detect_rk_layout(raw_bytes: bytes) -> str:
+    """
+    Auto-detect the RK Logistik file layout by inspecting column count and headers.
+    Returns one of: 'rk_nouveau_template', 'rk_temporaire', 'original'.
+    """
+    df = pd.read_excel(io.BytesIO(raw_bytes), header=0, nrows=0)
+    ncols = len(df.columns)
+    headers = [str(c).strip().lower() for c in df.columns]
+
+    # Nouveau template / basic template: 4 or 5 columns, first col is SKU/code
+    # Typical headers: SKU/Artikel, Shelf life/Date, Description/Kurztext, Quantity/Bestand
+    if ncols <= 5:
+        return "rk_nouveau_template"
+
+    # RK Temporaire: 8+ columns, code at col C (idx 2), qty at col G (idx 6), date at col H (idx 7)
+    if ncols >= 8:
+        # heuristic: col index 2 header often contains "artikel" or "nr"
+        col2 = headers[2] if len(headers) > 2 else ""
+        if any(k in col2 for k in ("artikel", "nr", "code", "sku", "ref")):
+            return "rk_temporaire"
+
+    # Original RK: 6 columns, code at col A, date at col C, desc at col E, qty at col F
+    return "original"
+
+
+def _detect_proconcept_layout(raw_bytes: bytes) -> str:
+    """
+    Auto-detect the Proconcept file layout by inspecting column count and headers.
+    Returns one of: 'proconcept_vcarole_cfh', 'original'.
+    """
+    df = pd.read_excel(io.BytesIO(raw_bytes), header=0, nrows=0)
+    ncols = len(df.columns)
+
+    # Vcarole CFH: 8+ columns, code at col C (idx 2)
+    if ncols >= 8:
+        return "proconcept_vcarole_cfh"
+
+    # Original Proconcept: 6-7 columns
+    return "original"
+
+
 def _run_comparison(theo_bytes: bytes, real_bytes: bytes,
                     layout_theorique: str, layout_reel: str) -> dict:
-    """Select the right parsers and comparison logic based on layouts."""
+    """Select the right parsers and comparison logic based on layouts.
+    Layouts are auto-detected from the file structure — the layout_* params
+    are used as hints only and overridden when the file structure disagrees.
+    """
+    # Auto-detect actual formats from file content
+    detected_reel = _detect_rk_layout(real_bytes)
+    detected_theo = _detect_proconcept_layout(theo_bytes)
+
+    # Use detected layout; fall back to user-supplied hint if detection returns 'original'
+    effective_reel = detected_reel if detected_reel != "original" else layout_reel
+    effective_theo = detected_theo if detected_theo != "original" else layout_theorique
+
     use_date_comparison = (
-        layout_theorique == "proconcept_vcarole_cfh" or
-        layout_reel in ("rk_temporaire", "rk_nouveau_template")
+        effective_theo == "proconcept_vcarole_cfh" or
+        effective_reel in ("rk_temporaire", "rk_nouveau_template")
     )
 
     if use_date_comparison:
-        # Date-based parsers (vcarole / temporaire / nouveau template)
-        if layout_theorique == "proconcept_vcarole_cfh":
+        if effective_theo == "proconcept_vcarole_cfh":
             theo_list = parse_proconcept_vcarole_cfh(theo_bytes)
         else:
             theo_list = parse_proconcept(theo_bytes)
 
-        if layout_reel == "rk_temporaire":
+        if effective_reel == "rk_temporaire":
             actual_list = parse_rk_temporaire(real_bytes)
-        elif layout_reel == "rk_nouveau_template":
+        elif effective_reel == "rk_nouveau_template":
             actual_list = parse_rk_nouveau_template(real_bytes)
         else:
             actual_list = parse_rk_logistik(real_bytes)
