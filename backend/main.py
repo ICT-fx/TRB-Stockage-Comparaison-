@@ -257,20 +257,21 @@ def parse_rk_nouveau_template(raw_bytes: bytes) -> list[dict]:
     """
     Parse the new standardized storage template imposed to warehouse partners.
     A (idx 0): SKU (code), B (idx 1): Shelf life (YYYY-MM), C (idx 2): Description, D (idx 3): Quantity.
+    An optional 5th column (Einheit/Unit) is accepted and ignored.
     Returns a list of {code, date, qty, description} — NOT aggregated.
     """
     df = pd.read_excel(io.BytesIO(raw_bytes), header=0)
 
-    if len(df.columns) <= 3:
+    if len(df.columns) < 4:
         raise ValueError(
             f"Fichier RK Logistik (Nouveau Template) invalide. Il a {len(df.columns)} colonnes, "
-            "mais on en attend au moins 4 (A à D)."
+            "mais on en attend au moins 4 (A à D : Code, Date, Description, Quantité)."
         )
 
     col_code = df.columns[0]  # A: SKU
     col_date = df.columns[1]  # B: Shelf life (YYYY-MM or similar)
     col_desc = df.columns[2]  # C: Description
-    col_qty  = df.columns[3]  # D: Quantity
+    col_qty  = df.columns[3]  # D: Quantity  (colonne E/Einheit ignorée si présente)
 
     products: list[dict] = []
 
