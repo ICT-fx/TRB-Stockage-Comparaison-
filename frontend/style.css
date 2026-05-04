@@ -595,6 +595,18 @@ body {
     border-top: 1px solid var(--border-subtle);
     margin-top: 2rem;
 }
+.version-badge {
+    display: inline-block;
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: var(--trb-blue-light);
+    background: rgba(26, 107, 181, 0.12);
+    border: 1px solid rgba(26, 107, 181, 0.25);
+    border-radius: 4px;
+    padding: 0.1rem 0.5rem;
+    letter-spacing: 0.04em;
+    vertical-align: middle;
+}
 
 /* ----- Utilities ----- */
 .hidden { display: none !important; }
