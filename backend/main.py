@@ -79,9 +79,9 @@ def _parse_rk_date(val: Any) -> str:
     # Format YYYY-MM (month only, e.g. "2028-03")
     if re.fullmatch(r"\d{4}-\d{2}", s):
         return f"01.{s[5:7]}.{s[0:4]}"
-    # Format YYYY-MM-DD or YYYY-MM-DD HH:MM:SS
+    # Format YYYY-MM-DD or DD.MM.YYYY
     try:
-        dt = pd.to_datetime(s)
+        dt = pd.to_datetime(s, dayfirst=True)
         return dt.strftime("%d.%m.%Y")
     except Exception:
         return s
@@ -98,6 +98,12 @@ def parse_proconcept(raw_bytes: bytes) -> list[dict]:
     Returns one row per lot (code + expiry date), not aggregated.
     """
     df = pd.read_excel(io.BytesIO(raw_bytes), header=0)
+
+    if len(df.columns) <= 5:
+        raise ValueError(
+            f"Fichier Proconcept (Original) invalide. Il a {len(df.columns)} colonnes, "
+            "mais on en attend au moins 6 (A à F)."
+        )
 
     col_desc = df.columns[2]  # C: Description courte
     col_date = df.columns[3]  # D: Chronologie (YYYYMMDD int)
@@ -136,6 +142,12 @@ def parse_rk_logistik(raw_bytes: bytes) -> list[dict]:
     """
     df = pd.read_excel(io.BytesIO(raw_bytes), header=0)
 
+    if len(df.columns) <= 5:
+        raise ValueError(
+            f"Fichier RK Logistik (Original) invalide. Il a {len(df.columns)} colonnes, "
+            "mais on en attend au moins 6 (A à F)."
+        )
+
     col_code = df.columns[0]  # A: Lagerort (SKU)
     col_date = df.columns[2]  # C: Expiry date (various formats)
     col_desc = df.columns[4]  # E: Kurztext
@@ -170,6 +182,12 @@ def parse_proconcept_vcarole_cfh(raw_bytes: bytes) -> list[dict]:
     """
     df = pd.read_excel(io.BytesIO(raw_bytes), header=0)
 
+    if len(df.columns) <= 7:
+        raise ValueError(
+            f"Fichier Proconcept (Vcarole CFH) invalide. Il a {len(df.columns)} colonnes, "
+            "mais on en attend au moins 8 (A à H)."
+        )
+
     col_code = df.columns[2]  # C: Référence principale
     col_date = df.columns[5]  # F: Chronologie (YYYYMMDD)
     col_qty  = df.columns[7]  # H: Qté
@@ -203,6 +221,12 @@ def parse_rk_temporaire(raw_bytes: bytes) -> list[dict]:
     """
     df = pd.read_excel(io.BytesIO(raw_bytes), header=0)
 
+    if len(df.columns) <= 7:
+        raise ValueError(
+            f"Fichier RK Logistik (Temporaire) invalide. Il a {len(df.columns)} colonnes, "
+            "mais on en attend au moins 8 (A à H)."
+        )
+
     col_code = df.columns[2]  # C: Artikel Nr.
     col_qty  = df.columns[6]  # G: Lagermenge
     col_date = df.columns[7]  # H: Expiry date
@@ -217,6 +241,46 @@ def parse_rk_temporaire(raw_bytes: bytes) -> list[dict]:
         code = str(int(float(str(code_raw))))
         qty = int(row[col_qty]) if pd.notna(row[col_qty]) else 0
         date_str = _format_date_generic(row[col_date])
+        desc = str(row[col_desc]).strip() if pd.notna(row[col_desc]) else ""
+
+        products.append({
+            "code": code,
+            "date": date_str,
+            "qty": qty,
+            "description": desc,
+        })
+
+    return products
+
+
+def parse_rk_nouveau_template(raw_bytes: bytes) -> list[dict]:
+    """
+    Parse the new standardized storage template imposed to warehouse partners.
+    A (idx 0): SKU (code), B (idx 1): Shelf life (YYYY-MM), C (idx 2): Description, D (idx 3): Quantity.
+    Returns a list of {code, date, qty, description} — NOT aggregated.
+    """
+    df = pd.read_excel(io.BytesIO(raw_bytes), header=0)
+
+    if len(df.columns) <= 3:
+        raise ValueError(
+            f"Fichier RK Logistik (Nouveau Template) invalide. Il a {len(df.columns)} colonnes, "
+            "mais on en attend au moins 4 (A à D)."
+        )
+
+    col_code = df.columns[0]  # A: SKU
+    col_date = df.columns[1]  # B: Shelf life (YYYY-MM or similar)
+    col_desc = df.columns[2]  # C: Description
+    col_qty  = df.columns[3]  # D: Quantity
+
+    products: list[dict] = []
+
+    for _, row in df.iterrows():
+        code_raw = row[col_code]
+        if not _is_numeric_code(code_raw):
+            continue
+        code = str(int(float(str(code_raw))))
+        qty = int(row[col_qty]) if pd.notna(row[col_qty]) else 0
+        date_str = _parse_rk_date(row[col_date])
         desc = str(row[col_desc]).strip() if pd.notna(row[col_desc]) else ""
 
         products.append({
@@ -556,11 +620,13 @@ def build_excel(result: dict) -> bytes:
 def _run_comparison(theo_bytes: bytes, real_bytes: bytes,
                     layout_theorique: str, layout_reel: str) -> dict:
     """Select the right parsers and comparison logic based on layouts."""
-    use_legacy = (layout_theorique == "proconcept_vcarole_cfh" or
-                  layout_reel == "rk_temporaire")
+    use_date_comparison = (
+        layout_theorique == "proconcept_vcarole_cfh" or
+        layout_reel in ("rk_temporaire", "rk_nouveau_template")
+    )
 
-    if use_legacy:
-        # Legacy date-based parsers (vcarole / temporaire formats)
+    if use_date_comparison:
+        # Date-based parsers (vcarole / temporaire / nouveau template)
         if layout_theorique == "proconcept_vcarole_cfh":
             theo_list = parse_proconcept_vcarole_cfh(theo_bytes)
         else:
@@ -568,6 +634,8 @@ def _run_comparison(theo_bytes: bytes, real_bytes: bytes,
 
         if layout_reel == "rk_temporaire":
             actual_list = parse_rk_temporaire(real_bytes)
+        elif layout_reel == "rk_nouveau_template":
+            actual_list = parse_rk_nouveau_template(real_bytes)
         else:
             actual_list = parse_rk_logistik(real_bytes)
 

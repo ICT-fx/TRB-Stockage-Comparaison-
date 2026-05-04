@@ -37,3 +37,6 @@ env/
 # Project specific Excel files (we don't want to commit real stock data)
 *.xlsx
 *.xls
+
+# Logs
+*.log
