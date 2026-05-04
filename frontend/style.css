@@ -559,6 +559,13 @@ body {
     font-variant-numeric: tabular-nums;
     color: var(--trb-blue-light);
 }
+.result-table .lot-cell {
+    font-weight: 500;
+    font-variant-numeric: tabular-nums;
+    color: var(--green);
+    font-size: 0.82rem;
+    letter-spacing: 0.02em;
+}
 .result-table .qty-cell {
     font-variant-numeric: tabular-nums;
     text-align: right;
