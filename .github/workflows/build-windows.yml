@@ -1,0 +1,73 @@
+name: Build Windows EXE
+
+# Compile l'outil en un exécutable Windows autonome (.exe) et publie le
+# fichier dans une "release" GitHub téléchargeable, ainsi qu'en artefact.
+#
+# Déclenchement :
+#   - à chaque push sur "main" (le .exe est regénéré automatiquement) ;
+#   - manuel (onglet Actions -> "Build Windows EXE" -> "Run workflow") ;
+#   - à chaque tag "v*" (ex. v2.0.0) pour figer une version.
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    tags:
+      - "v*"
+
+permissions:
+  contents: write   # nécessaire pour créer/mettre à jour la release
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: Récupérer le code
+        uses: actions/checkout@v4
+
+      - name: Installer Python 3.11.9
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11.9"
+
+      - name: Installer les dépendances + PyInstaller
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r backend/requirements.txt
+          pip install pyinstaller==6.11.1
+
+      - name: Compiler le .exe
+        run: pyinstaller windows/trb_stock.spec --noconfirm --clean
+
+      - name: Vérifier que le .exe existe
+        shell: pwsh
+        run: |
+          if (-not (Test-Path "dist/TRB-Comparaison-Stock.exe")) {
+            Write-Error "Le .exe n'a pas ete genere."
+            exit 1
+          }
+          Get-Item "dist/TRB-Comparaison-Stock.exe" | Select-Object Name, Length
+
+      - name: Publier l'artefact (téléchargeable depuis l'onglet Actions)
+        uses: actions/upload-artifact@v4
+        with:
+          name: TRB-Comparaison-Stock-Windows
+          path: dist/TRB-Comparaison-Stock.exe
+          if-no-files-found: error
+
+      # Release à tag fixe "windows-latest" : lien de téléchargement stable,
+      # toujours mis à jour avec la dernière compilation.
+      - name: Publier / mettre à jour la release "windows-latest"
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $tag = "windows-latest"
+          # Supprime l'ancienne release + son tag (ignore l'erreur si absente).
+          gh release delete $tag --yes --cleanup-tag 2>$null
+          gh release create $tag "dist/TRB-Comparaison-Stock.exe" `
+            --title "TRB Comparaison Stock — Windows (dernière version)" `
+            --notes "Executable Windows autonome. Telecharger TRB-Comparaison-Stock.exe puis double-cliquer. Aucune installation requise." `
+            --latest

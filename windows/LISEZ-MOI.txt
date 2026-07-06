@@ -1,0 +1,77 @@
+========================================================
+  TRB Chemedica — Comparaison de Stock (Windows)
+========================================================
+
+L'outil est fourni sous forme d'un SEUL fichier :
+
+        TRB-Comparaison-Stock.exe
+
+Il contient TOUT ce qu'il faut pour fonctionner (Python, les
+librairies, le moteur de calcul et l'interface). Il n'y a
+RIEN à installer.
+
+
+POUR LANCER L'OUTIL
+-------------------
+1. Double-clique sur  «  TRB-Comparaison-Stock.exe  ».
+2. Une fenetre noire s'ouvre (c'est le moteur : c'est normal).
+3. Le navigateur s'ouvre tout seul sur l'interface.
+   (Si rien ne s'ouvre : va sur  http://localhost:8000 )
+
+IMPORTANT — le 1er lancement est LENT (15 a 30 secondes).
+La fenetre noire peut rester vide un moment : c'est NORMAL,
+Windows verifie et decompresse le fichier. NE FERME PAS la
+fenetre, patiente. Les fois suivantes sont bien plus rapides.
+
+Ensuite, utilise l'interface comme d'habitude : depose les
+deux fichiers Excel, clique sur « Comparer », telecharge le
+rapport.
+
+
+POUR ARRETER
+------------
+Ferme la fenetre noire « TRB Chemedica ». C'est tout.
+
+
+EN CAS DE SOUCI
+---------------
+- Windows affiche un avertissement bleu "Windows a protege
+  votre ordinateur" -> clique sur « Informations complementaires »
+  puis « Executer quand meme ». (Le fichier n'est pas signe, mais
+  il est sans danger.)
+
+- "Le port 8000 est deja utilise" -> l'outil est deja ouvert
+  dans une autre fenetre. Ferme l'autre fenetre noire, puis
+  relance.
+
+- Le navigateur ne s'ouvre pas -> ouvre-le manuellement et va
+  sur  http://localhost:8000
+
+
+========================================================
+  POUR LES DEVELOPPEURS — comment est fabrique le .exe
+========================================================
+
+Le .exe est compile automatiquement par GitHub Actions sur une
+machine Windows (impossible de compiler un .exe Windows depuis un
+Mac). Voir  .github/workflows/build-windows.yml
+
+Telechargement du dernier .exe :
+  https://github.com/ICT-fx/TRB-Stockage-Comparaison-/releases
+  (release "windows-latest")
+
+Compiler soi-meme sur un PC Windows (Python requis) :
+  double-clic sur  windows\build.bat
+  -> genere  dist\TRB-Comparaison-Stock.exe
+
+Fichiers de compilation :
+  windows\launcher.py      -> point d'entree (fusionne API + interface)
+  windows\trb_stock.spec   -> configuration PyInstaller
+  windows\build.bat        -> compilation locale sur Windows
+
+
+========================================================
+  ANCIENNE METHODE (sans .exe, avec Python installe)
+========================================================
+Toujours disponible en secours via :
+  « Lancer TRB Stock.bat »  (necessite Python installe)

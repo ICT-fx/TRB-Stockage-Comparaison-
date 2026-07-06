@@ -28,6 +28,7 @@ venv/
 .venv/
 env/
 .env/
+build-venv/
 
 # Mac OS
 .DS_Store
