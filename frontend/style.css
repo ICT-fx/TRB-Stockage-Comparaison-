@@ -673,7 +673,7 @@ body {
 .modal-overlay.hidden { display: none; }
 .modal-card {
     width: 100%;
-    max-width: 520px;
+    max-width: 680px;
     max-height: 90vh;
     overflow-y: auto;
     padding: 28px;
@@ -696,14 +696,21 @@ body {
     background: rgba(255, 255, 255, 0.06);
     color: #fff;
 }
-.tpl-mapping { display: flex; flex-direction: column; gap: 10px; }
-.tpl-map-row {
+/* Mapping des champs : disposition horizontale (colonnes côte à côte),
+   libellé au-dessus de chaque menu. Les colonnes s'ajustent et passent à la
+   ligne automatiquement selon la largeur. */
+.tpl-mapping {
     display: grid;
-    grid-template-columns: 130px 1fr;
-    align-items: center;
-    gap: 10px;
+    grid-template-columns: repeat(auto-fit, minmax(175px, 1fr));
+    gap: 14px 16px;
 }
-.tpl-map-row label { font-size: 0.88rem; color: #e2e8f0; }
+.tpl-map-row {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    min-width: 0;
+}
+.tpl-map-row label { font-size: 0.85rem; color: #e2e8f0; }
 .tpl-map-row select {
     padding: 7px 8px;
     border-radius: 6px;
@@ -711,6 +718,13 @@ body {
     background: rgba(255, 255, 255, 0.06);
     color: #fff;
     width: 100%;
+}
+/* Options lisibles : fond sombre + texte clair (évite blanc sur blanc,
+   notamment sur Windows où la liste déroulante utilise le rendu natif). */
+.tpl-map-row select option,
+.layout-select option {
+    background-color: #111b2e;
+    color: #fff;
 }
 .tpl-name-input {
     width: 100%;

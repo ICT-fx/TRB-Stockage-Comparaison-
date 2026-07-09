@@ -15,7 +15,7 @@ OPTIONAL_FIELDS = ["date", "description"]
 
 BUILTIN_TEMPLATE = {
     "id": "basic-stock",
-    "name": "Basic template stock",
+    "name": "Template RK Logistics",
     "builtin": True,
     "header_row": 2,
     "columns": {"sku": 0, "lot": 1, "date": 2, "description": 3, "qty": 4},

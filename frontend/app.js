@@ -58,7 +58,7 @@ async function refreshTemplates(selectId) {
         const data = await res.json();
         tplState.list = data.templates || [];
     } catch {
-        tplState.list = [{ id: "basic-stock", name: "Basic template stock", builtin: true }];
+        tplState.list = [{ id: "basic-stock", name: "Template RK Logistics", builtin: true }];
     }
     const remembered = selectId || localStorage.getItem(LAST_TPL_KEY) || "basic-stock";
     const exists = tplState.list.some(t => t.id === remembered);

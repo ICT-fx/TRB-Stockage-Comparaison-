@@ -51,7 +51,7 @@ def test_all_templates_includes_builtin_first(monkeypatch, tmp_path):
 
 def test_get_template_builtin_and_missing(monkeypatch, tmp_path):
     monkeypatch.setenv("TRB_DATA_DIR", str(tmp_path))
-    assert templates.get_template("basic-stock")["name"] == "Basic template stock"
+    assert templates.get_template("basic-stock")["name"] == "Template RK Logistics"
     assert templates.get_template("does-not-exist") is None
 
 
