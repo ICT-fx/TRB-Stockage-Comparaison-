@@ -503,3 +503,26 @@ tplSave.addEventListener("click", saveTemplate);
 tplCancel.addEventListener("click", closeTemplateModal);
 modal.addEventListener("click", e => { if (e.target === modal) closeTemplateModal(); });
 btnTemplateNew.addEventListener("click", () => openTemplateModal(null));
+
+// ── Modifier / Supprimer ────────────────────────
+btnTemplateEdit.addEventListener("click", () => {
+    const t = tplState.list.find(x => x.id === selectedTemplateId());
+    if (t && !t.builtin) openTemplateModal(t);
+});
+
+btnTemplateDel.addEventListener("click", async () => {
+    const t = tplState.list.find(x => x.id === selectedTemplateId());
+    if (!t || t.builtin) return;
+    if (!confirm(`Supprimer le template « ${t.name} » ?`)) return;
+    try {
+        const res = await fetch(`${API_BASE}/templates/${t.id}`, { method: "DELETE" });
+        if (!res.ok) {
+            const e = await res.json().catch(() => ({ detail: "Erreur" }));
+            throw new Error(e.detail || "Suppression impossible");
+        }
+        await refreshTemplates("basic-stock");
+    } catch (err) {
+        errorBanner.textContent = err.message;
+        errorBanner.classList.remove("hidden");
+    }
+});
