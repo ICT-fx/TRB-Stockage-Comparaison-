@@ -305,3 +305,196 @@ tabsBar.addEventListener("click", (e) => {
     document.querySelectorAll(".tab-panel").forEach(p => p.classList.remove("active"));
     document.getElementById(`panel-${tabName}`).classList.add("active");
 });
+
+// ── Modale template ─────────────────────────────
+const modal          = document.getElementById("template-modal");
+const modalTitle     = document.getElementById("tpl-modal-title");
+const tplFileInput   = document.getElementById("tpl-file-input");
+const tplDrop        = document.getElementById("tpl-drop");
+const tplFileName    = document.getElementById("tpl-file-name");
+const tplHeaderRow   = document.getElementById("tpl-header-row");
+const tplMapping     = document.getElementById("tpl-mapping");
+const tplName        = document.getElementById("tpl-name");
+const tplSave        = document.getElementById("tpl-save");
+const tplCancel      = document.getElementById("tpl-cancel");
+const tplError       = document.getElementById("tpl-error");
+
+const FIELDS = [
+    { key: "sku",         label: "SKU",             required: true },
+    { key: "lot",         label: "N° de lot",       required: true },
+    { key: "date",        label: "Date d'expir.",   required: false },
+    { key: "description", label: "Description",     required: false },
+    { key: "qty",         label: "Quantité",        required: true },
+];
+
+const GUESS = {
+    sku: ["sku", "artikel", "référence", "reference", "code", "ref"],
+    lot: ["lot", "lagerort", "charge", "batch"],
+    date: ["date", "exp", "mhd", "verfall", "péremption", "peremption", "g"],
+    description: ["desc", "kurztext", "bezeichnung", "libellé", "libelle", "désignation", "designation", "produit"],
+    qty: ["qte", "qté", "quantité", "quantite", "menge", "bestand", "stock", "qty"],
+};
+
+let modalState = { columns: [], fileBytes: null, editId: null, lastFile: null };
+
+function guessColumn(fieldKey, columns) {
+    const kws = GUESS[fieldKey] || [];
+    for (const col of columns) {
+        const n = String(col.name).toLowerCase();
+        if (kws.some(k => n.includes(k))) return col.index;
+    }
+    return null;
+}
+
+function renderMapping(columns, preset) {
+    modalState.columns = columns;
+    const optionsFor = (allowNone) => {
+        let opts = allowNone ? `<option value="">— aucune —</option>` : "";
+        opts += columns.map(c => {
+            const ex = c.samples && c.samples.length ? ` (ex: ${escapeHtml(c.samples[0])})` : "";
+            return `<option value="${c.index}">${escapeHtml(c.name)}${ex}</option>`;
+        }).join("");
+        return opts;
+    };
+    tplMapping.innerHTML = FIELDS.map(f => `
+        <div class="tpl-map-row">
+            <label for="map-${f.key}">${f.label}${f.required ? " *" : ""}</label>
+            <select id="map-${f.key}" data-field="${f.key}">${optionsFor(!f.required)}</select>
+        </div>`).join("");
+
+    FIELDS.forEach(f => {
+        const sel = document.getElementById(`map-${f.key}`);
+        let val = preset && preset.columns && preset.columns[f.key];
+        if (val === undefined || val === null) {
+            const g = guessColumn(f.key, columns);
+            val = g === null ? "" : g;
+        }
+        sel.value = val === null ? "" : String(val);
+    });
+    validateModal();
+}
+
+function validateModal() {
+    const named = tplName.value.trim().length > 0;
+    const hasCols = modalState.columns.length > 0;
+    tplSave.disabled = !(named && hasCols);
+}
+
+async function previewFile(file, headerRow) {
+    tplError.classList.add("hidden");
+    const fd = new FormData();
+    fd.append("file", file);
+    if (headerRow) fd.append("header_row", String(headerRow));
+    const res = await fetch(`${API_BASE}/templates/preview`, { method: "POST", body: fd });
+    if (!res.ok) {
+        const e = await res.json().catch(() => ({ detail: "Erreur" }));
+        throw new Error(e.detail || "Fichier illisible");
+    }
+    return res.json();
+}
+
+async function handleTemplateFile(file, preset) {
+    if (!file) return;
+    modalState.lastFile = file;
+    tplFileName.textContent = file.name;
+    try {
+        const data = await previewFile(file, null);
+        tplHeaderRow.disabled = false;
+        tplHeaderRow.value = data.header_row;
+        renderMapping(data.columns, preset);
+    } catch (err) {
+        tplError.textContent = err.message;
+        tplError.classList.remove("hidden");
+    }
+}
+
+tplFileInput.addEventListener("change", e => handleTemplateFile(e.target.files[0], null));
+
+tplDrop.addEventListener("dragover", e => { e.preventDefault(); tplDrop.classList.add("dragover"); });
+tplDrop.addEventListener("dragleave", () => tplDrop.classList.remove("dragover"));
+tplDrop.addEventListener("drop", e => {
+    e.preventDefault(); tplDrop.classList.remove("dragover");
+    if (e.dataTransfer.files[0]) handleTemplateFile(e.dataTransfer.files[0], null);
+});
+
+tplHeaderRow.addEventListener("change", async () => {
+    if (!modalState.lastFile) return;
+    try {
+        const data = await previewFile(modalState.lastFile, parseInt(tplHeaderRow.value, 10));
+        renderMapping(data.columns, null);
+    } catch (err) {
+        tplError.textContent = err.message;
+        tplError.classList.remove("hidden");
+    }
+});
+
+tplName.addEventListener("input", validateModal);
+
+function collectColumns() {
+    const cols = {};
+    FIELDS.forEach(f => {
+        const v = document.getElementById(`map-${f.key}`).value;
+        cols[f.key] = v === "" ? null : parseInt(v, 10);
+    });
+    return cols;
+}
+
+async function saveTemplate() {
+    tplError.classList.add("hidden");
+    const payload = {
+        name: tplName.value.trim(),
+        header_row: parseInt(tplHeaderRow.value, 10) || 1,
+        columns: collectColumns(),
+    };
+    const editing = modalState.editId;
+    const url = editing ? `${API_BASE}/templates/${editing}` : `${API_BASE}/templates`;
+    const method = editing ? "PUT" : "POST";
+    try {
+        const res = await fetch(url, {
+            method,
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+        });
+        if (!res.ok) {
+            const e = await res.json().catch(() => ({ detail: "Erreur" }));
+            throw new Error(e.detail || "Enregistrement impossible");
+        }
+        const saved = await res.json();
+        closeTemplateModal();
+        await refreshTemplates(saved.id);
+    } catch (err) {
+        tplError.textContent = err.message;
+        tplError.classList.remove("hidden");
+    }
+}
+
+function openTemplateModal(template) {
+    modalState = { columns: [], fileBytes: null, editId: template ? template.id : null, lastFile: null };
+    modalTitle.textContent = template ? "Modifier le template" : "Nouveau template";
+    tplName.value = template ? template.name : "";
+    tplFileName.textContent = "Aucun fichier";
+    tplError.classList.add("hidden");
+    tplSave.disabled = true;
+    if (template) {
+        // Pré-remplir sans fichier : colonnes génériques jusqu'à l'indice max connu.
+        const maxIdx = Math.max(...Object.values(template.columns).filter(v => v !== null), 0);
+        const cols = Array.from({ length: maxIdx + 1 }, (_, i) => ({ index: i, name: `Colonne ${i + 1}`, samples: [] }));
+        tplHeaderRow.disabled = false;
+        tplHeaderRow.value = template.header_row;
+        renderMapping(cols, template);
+    } else {
+        tplHeaderRow.disabled = true;
+        tplHeaderRow.value = 1;
+        tplMapping.innerHTML = `<p class="tpl-step-label">Dépose d'abord un fichier exemple ci-dessus.</p>`;
+    }
+    modal.classList.remove("hidden");
+}
+
+function closeTemplateModal() {
+    modal.classList.add("hidden");
+}
+
+tplSave.addEventListener("click", saveTemplate);
+tplCancel.addEventListener("click", closeTemplateModal);
+modal.addEventListener("click", e => { if (e.target === modal) closeTemplateModal(); });
+btnTemplateNew.addEventListener("click", () => openTemplateModal(null));
