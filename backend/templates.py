@@ -128,3 +128,27 @@ def delete_template(template_id: str) -> None:
     if len(new) == len(tpls):
         raise KeyError(template_id)
     save_user_templates(new)
+
+
+def detect_columns(raw_bytes: bytes, header_row: int | None = None) -> dict:
+    """Détecte la ligne d'en-tête + décrit chaque colonne d'un fichier exemple."""
+    raw = pd.read_excel(io.BytesIO(raw_bytes), header=None)
+    if raw.empty:
+        raise ValueError("Fichier illisible ou vide.")
+
+    if header_row is None:
+        header_row = 1
+        for idx in range(len(raw)):
+            if raw.iloc[idx].notna().any():
+                header_row = idx + 1
+                break
+
+    df = pd.read_excel(io.BytesIO(raw_bytes), header=header_row - 1)
+    columns = []
+    for i, col in enumerate(df.columns):
+        label = str(col)
+        if label.startswith("Unnamed"):
+            label = f"Colonne {i + 1}"
+        samples = [str(v) for v in df.iloc[:, i].dropna().head(3).tolist()]
+        columns.append({"index": i, "name": label, "samples": samples})
+    return {"header_row": header_row, "columns": columns}
