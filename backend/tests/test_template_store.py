@@ -95,3 +95,63 @@ def test_validate_rejects_bad_header_row():
     with pytest.raises(ValueError):
         templates.validate_template({"name": "T", "header_row": 0,
                                      "columns": {"sku": 0, "lot": 1, "qty": 2}})
+
+
+def _payload(name="T"):
+    return {"name": name, "header_row": 1,
+            "columns": {"sku": 0, "lot": 1, "qty": 2}}
+
+
+def test_create_assigns_id_and_persists(monkeypatch, tmp_path):
+    monkeypatch.setenv("TRB_DATA_DIR", str(tmp_path))
+    created = templates.create_template(_payload("Partenaire X"))
+    assert created["id"] and created["builtin"] is False
+    assert created["name"] == "Partenaire X"
+    assert templates.get_template(created["id"])["name"] == "Partenaire X"
+
+
+def test_create_persists_across_new_process_read(monkeypatch, tmp_path):
+    # Simule un redémarrage : on écrit, puis on relit depuis le fichier.
+    monkeypatch.setenv("TRB_DATA_DIR", str(tmp_path))
+    created = templates.create_template(_payload("Persist"))
+    reloaded = templates.load_user_templates()
+    assert any(t["id"] == created["id"] for t in reloaded)
+
+
+def test_update_modifies_existing(monkeypatch, tmp_path):
+    monkeypatch.setenv("TRB_DATA_DIR", str(tmp_path))
+    created = templates.create_template(_payload("Old"))
+    updated = templates.update_template(created["id"], _payload("New"))
+    assert updated["name"] == "New"
+    assert templates.get_template(created["id"])["name"] == "New"
+
+
+def test_update_missing_raises_keyerror(monkeypatch, tmp_path):
+    monkeypatch.setenv("TRB_DATA_DIR", str(tmp_path))
+    with pytest.raises(KeyError):
+        templates.update_template("ghost", _payload())
+
+
+def test_update_builtin_raises_valueerror(monkeypatch, tmp_path):
+    monkeypatch.setenv("TRB_DATA_DIR", str(tmp_path))
+    with pytest.raises(ValueError):
+        templates.update_template("basic-stock", _payload())
+
+
+def test_delete_removes(monkeypatch, tmp_path):
+    monkeypatch.setenv("TRB_DATA_DIR", str(tmp_path))
+    created = templates.create_template(_payload())
+    templates.delete_template(created["id"])
+    assert templates.get_template(created["id"]) is None
+
+
+def test_delete_missing_raises_keyerror(monkeypatch, tmp_path):
+    monkeypatch.setenv("TRB_DATA_DIR", str(tmp_path))
+    with pytest.raises(KeyError):
+        templates.delete_template("ghost")
+
+
+def test_delete_builtin_raises_valueerror(monkeypatch, tmp_path):
+    monkeypatch.setenv("TRB_DATA_DIR", str(tmp_path))
+    with pytest.raises(ValueError):
+        templates.delete_template("basic-stock")

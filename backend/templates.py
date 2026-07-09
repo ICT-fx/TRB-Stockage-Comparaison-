@@ -96,3 +96,35 @@ def validate_template(payload: dict) -> dict:
         raise ValueError("SKU, N° de lot et Quantité doivent être sur des colonnes différentes.")
 
     return {"name": name, "header_row": header_row, "columns": norm}
+
+
+def create_template(payload: dict) -> dict:
+    norm = validate_template(payload)
+    tpl = {"id": uuid.uuid4().hex[:8], "builtin": False, **norm}
+    tpls = load_user_templates()
+    tpls.append(tpl)
+    save_user_templates(tpls)
+    return tpl
+
+
+def update_template(template_id: str, payload: dict) -> dict:
+    if template_id == BUILTIN_TEMPLATE["id"]:
+        raise ValueError("Le template intégré ne peut pas être modifié.")
+    norm = validate_template(payload)
+    tpls = load_user_templates()
+    for i, t in enumerate(tpls):
+        if t.get("id") == template_id:
+            tpls[i] = {"id": template_id, "builtin": False, **norm}
+            save_user_templates(tpls)
+            return tpls[i]
+    raise KeyError(template_id)
+
+
+def delete_template(template_id: str) -> None:
+    if template_id == BUILTIN_TEMPLATE["id"]:
+        raise ValueError("Le template intégré ne peut pas être supprimé.")
+    tpls = load_user_templates()
+    new = [t for t in tpls if t.get("id") != template_id]
+    if len(new) == len(tpls):
+        raise KeyError(template_id)
+    save_user_templates(new)
