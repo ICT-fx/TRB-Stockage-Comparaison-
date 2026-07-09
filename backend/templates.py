@@ -57,3 +57,42 @@ def save_user_templates(tpls: list[dict]) -> None:
     with open(tmp, "w", encoding="utf-8") as f:
         json.dump({"templates": tpls}, f, ensure_ascii=False, indent=2)
     os.replace(tmp, path)
+
+
+def all_templates() -> list[dict]:
+    return [BUILTIN_TEMPLATE] + load_user_templates()
+
+
+def get_template(template_id: str) -> dict | None:
+    for t in all_templates():
+        if t.get("id") == template_id:
+            return t
+    return None
+
+
+def validate_template(payload: dict) -> dict:
+    """Valide + normalise un template entrant. Lève ValueError sinon."""
+    name = str(payload.get("name", "")).strip()
+    if not name:
+        raise ValueError("Le nom du template est obligatoire.")
+
+    header_row = payload.get("header_row", 1)
+    if not isinstance(header_row, int) or isinstance(header_row, bool) or header_row < 1:
+        raise ValueError("La ligne d'en-tête doit être un entier supérieur ou égal à 1.")
+
+    cols = payload.get("columns", {}) or {}
+    norm: dict = {}
+    for key in REQUIRED_FIELDS:
+        val = cols.get(key)
+        if not isinstance(val, int) or isinstance(val, bool) or val < 0:
+            raise ValueError(f"Le champ « {key} » est obligatoire et doit désigner une colonne.")
+        norm[key] = val
+    for key in OPTIONAL_FIELDS:
+        val = cols.get(key)
+        norm[key] = val if (isinstance(val, int) and not isinstance(val, bool) and val >= 0) else None
+
+    req_vals = [norm[k] for k in REQUIRED_FIELDS]
+    if len(set(req_vals)) != len(req_vals):
+        raise ValueError("SKU, N° de lot et Quantité doivent être sur des colonnes différentes.")
+
+    return {"name": name, "header_row": header_row, "columns": norm}
