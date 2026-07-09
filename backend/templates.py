@@ -130,9 +130,18 @@ def delete_template(template_id: str) -> None:
     save_user_templates(new)
 
 
+def _format_sample(v) -> str:
+    if isinstance(v, float) and v.is_integer():
+        return str(int(v))
+    return str(v)
+
+
 def detect_columns(raw_bytes: bytes, header_row: int | None = None) -> dict:
     """Détecte la ligne d'en-tête + décrit chaque colonne d'un fichier exemple."""
-    raw = pd.read_excel(io.BytesIO(raw_bytes), header=None)
+    try:
+        raw = pd.read_excel(io.BytesIO(raw_bytes), header=None)
+    except Exception:
+        raise ValueError("Fichier illisible ou vide.")
     if raw.empty:
         raise ValueError("Fichier illisible ou vide.")
 
@@ -149,6 +158,6 @@ def detect_columns(raw_bytes: bytes, header_row: int | None = None) -> dict:
         label = str(col)
         if label.startswith("Unnamed"):
             label = f"Colonne {i + 1}"
-        samples = [str(v) for v in df.iloc[:, i].dropna().head(3).tolist()]
+        samples = [_format_sample(v) for v in df.iloc[:, i].dropna().head(3).tolist()]
         columns.append({"index": i, "name": label, "samples": samples})
     return {"header_row": header_row, "columns": columns}

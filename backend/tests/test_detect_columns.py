@@ -53,3 +53,21 @@ def test_unnamed_columns_get_generic_labels():
 def test_empty_file_raises():
     with pytest.raises(ValueError):
         templates.detect_columns(build_xlsx([]))
+
+
+def test_corrupted_file_raises():
+    data = build_xlsx([["SKU", "Lot"], [1, 2]])
+    truncated = data[: len(data) // 2]
+    with pytest.raises(ValueError):
+        templates.detect_columns(truncated)
+
+
+def test_numeric_samples_have_no_trailing_dot_zero():
+    data = build_xlsx([
+        ["SKU", "Lot"],
+        [1349, 462994],
+        [687, None],
+    ])
+    out = templates.detect_columns(data)
+    # Lot column samples must be clean integers, not "462994.0"
+    assert out["columns"][1]["samples"][0] == "462994"
