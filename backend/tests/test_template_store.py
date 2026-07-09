@@ -155,3 +155,20 @@ def test_delete_builtin_raises_valueerror(monkeypatch, tmp_path):
     monkeypatch.setenv("TRB_DATA_DIR", str(tmp_path))
     with pytest.raises(ValueError):
         templates.delete_template("basic-stock")
+
+
+def test_data_dir_uses_shared_drive_when_present(monkeypatch):
+    monkeypatch.delenv("TRB_DATA_DIR", raising=False)
+    monkeypatch.setattr(templates.os, "name", "nt")
+    monkeypatch.setattr(templates.os.path, "isdir", lambda p: True)
+    assert templates.data_dir() == templates.SHARED_WINDOWS_DIR
+
+
+def test_data_dir_falls_back_local_when_drive_absent(monkeypatch):
+    monkeypatch.delenv("TRB_DATA_DIR", raising=False)
+    monkeypatch.setattr(templates.os, "name", "nt")
+    monkeypatch.setattr(templates.os.path, "isdir", lambda p: False)
+    monkeypatch.setenv("APPDATA", "/tmp/fake-appdata")
+    d = templates.data_dir()
+    assert d.endswith("TRB-Comparaison-Stock")
+    assert templates.SHARED_WINDOWS_DIR not in d

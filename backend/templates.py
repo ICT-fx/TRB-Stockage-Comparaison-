@@ -22,11 +22,28 @@ BUILTIN_TEMPLATE = {
 }
 
 
+# Emplacement PARTAGÉ (lecteur réseau) : les templates enregistrés ici sont
+# visibles par tous les postes qui accèdent à ce dossier.
+SHARED_WINDOWS_DIR = r"O:\Logistique\ZZ Outils\Outil Comparaison Stock"
+_SHARED_DRIVE = "O:\\"
+
+
 def data_dir() -> str:
+    """Dossier où sont stockés les templates.
+
+    Priorité :
+      1. variable d'environnement TRB_DATA_DIR (surcharge manuelle / tests) ;
+      2. sous Windows, le lecteur réseau partagé si O: est accessible
+         (templates communs à tous les postes) ;
+      3. repli local %APPDATA% (Windows) ou ~/.trb-comparaison-stock (autres),
+         pour que l'outil fonctionne même si le lecteur O: n'est pas monté.
+    """
     override = os.environ.get("TRB_DATA_DIR")
     if override:
         return override
     if os.name == "nt":
+        if os.path.isdir(_SHARED_DRIVE):
+            return SHARED_WINDOWS_DIR
         base = os.environ.get("APPDATA") or os.path.expanduser("~")
         return os.path.join(base, "TRB-Comparaison-Stock")
     return os.path.join(os.path.expanduser("~"), ".trb-comparaison-stock")
