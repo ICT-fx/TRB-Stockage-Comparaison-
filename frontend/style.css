@@ -735,4 +735,8 @@ body {
     cursor: pointer;
 }
 .btn-cancel:hover { background: rgba(255, 255, 255, 0.08); }
+.tpl-drop.dragover {
+    outline: 2px dashed #4da3ff;
+    outline-offset: 4px;
+}
 .modal-actions .btn-primary { width: auto; padding: 10px 20px; margin: 0; }

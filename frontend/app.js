@@ -370,6 +370,7 @@ function renderMapping(columns, preset) {
             val = g === null ? "" : g;
         }
         sel.value = val === null ? "" : String(val);
+        sel.addEventListener("change", validateModal);
     });
     validateModal();
 }
@@ -377,7 +378,11 @@ function renderMapping(columns, preset) {
 function validateModal() {
     const named = tplName.value.trim().length > 0;
     const hasCols = modalState.columns.length > 0;
-    tplSave.disabled = !(named && hasCols);
+    const requiredMapped = FIELDS.filter(f => f.required).every(f => {
+        const sel = document.getElementById(`map-${f.key}`);
+        return sel && sel.value !== "";
+    });
+    tplSave.disabled = !(named && hasCols && requiredMapped);
 }
 
 async function previewFile(file, headerRow) {
