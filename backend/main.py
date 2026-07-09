@@ -17,6 +17,8 @@ from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils.dataframe import dataframe_to_rows
 
+import templates as template_store
+
 # Patch zipfile to ignore CRC-32 errors commonly found in ERP-exported Excel files
 zipfile.ZipExtFile._update_crc = lambda *args, **kwargs: None
 
@@ -498,6 +500,56 @@ async def compare_download(
         )
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Erreur lors du traitement : {str(e)}")
+
+
+
+# ──────────────────────────────────────────────
+# Templates d'espace de stockage
+# ──────────────────────────────────────────────
+
+@app.get("/templates")
+async def list_templates():
+    return {"templates": template_store.all_templates()}
+
+
+@app.post("/templates")
+async def create_template_route(payload: dict):
+    try:
+        return template_store.create_template(payload)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.put("/templates/{template_id}")
+async def update_template_route(template_id: str, payload: dict):
+    try:
+        return template_store.update_template(template_id, payload)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Template introuvable.")
+
+
+@app.delete("/templates/{template_id}")
+async def delete_template_route(template_id: str):
+    try:
+        template_store.delete_template(template_id)
+        return {"ok": True}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Template introuvable.")
+
+
+@app.post("/templates/preview")
+async def preview_template(file: UploadFile = File(...), header_row: int | None = Form(None)):
+    try:
+        raw = await file.read()
+        return template_store.detect_columns(raw, header_row)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Fichier illisible : {e}")
 
 
 @app.get("/health")

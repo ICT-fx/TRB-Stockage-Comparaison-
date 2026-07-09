@@ -81,6 +81,8 @@ def validate_template(payload: dict) -> dict:
         raise ValueError("La ligne d'en-tête doit être un entier supérieur ou égal à 1.")
 
     cols = payload.get("columns", {}) or {}
+    if not isinstance(cols, dict):
+        raise ValueError("Le champ « columns » doit être un objet.")
     norm: dict = {}
     for key in REQUIRED_FIELDS:
         val = cols.get(key)
