@@ -24,10 +24,19 @@ zipfile.ZipExtFile._update_crc = lambda *args, **kwargs: None
 
 app = FastAPI(title="TRB Stock Compare API")
 
+# CORS restreint : seules les origines connues peuvent appeler l'API.
+# - le frontend hébergé (Render, sous-domaine *.onrender.com du projet) ;
+# - le poste local (l'.exe sert l'interface sur localhost:8000 ; l'ancien mode
+#   dev utilisait localhost:3000).
+# Les routes /templates modifient un état persistant : on bloque donc les sites
+# tiers. L'app n'utilise ni cookie ni session -> allow_credentials=False.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
+    allow_origin_regex=(
+        r"^https://trb-stock-compare-front[a-z0-9-]*\.onrender\.com$"
+        r"|^http://(localhost|127\.0\.0\.1):(8000|3000)$"
+    ),
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
