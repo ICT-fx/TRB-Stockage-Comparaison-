@@ -68,10 +68,13 @@
                         <h3>Données de l'espace de stockage</h3>
                         <p>Inventaire physique du partenaire logistique</p>
                         <div class="layout-selector">
-                            <label for="layout-reel">Mise en page :</label>
-                            <select id="layout-reel" class="layout-select">
-                                <option value="rk_nouveau_template">Basic template stock</option>
-                            </select>
+                            <label for="layout-reel">Template de colonnes :</label>
+                            <select id="layout-reel" class="layout-select"></select>
+                            <div class="template-actions">
+                                <button type="button" id="btn-template-edit" class="tpl-btn" title="Modifier le template">✎</button>
+                                <button type="button" id="btn-template-delete" class="tpl-btn" title="Supprimer le template">🗑</button>
+                                <button type="button" id="btn-template-new" class="tpl-btn tpl-btn-new" title="Nouveau template">＋ Nouveau</button>
+                            </div>
                         </div>
                         <label class="upload-btn" for="input-reel">
                             Choisir un fichier
@@ -125,6 +128,44 @@
     <footer id="app-footer">
         <p>&copy; 2026 TRB Chemedica — Outil interne &nbsp;|&nbsp; <span class="version-badge">v2.0.0</span></p>
     </footer>
+
+    <!-- Modale : création / modification de template -->
+    <div id="template-modal" class="modal-overlay hidden">
+        <div class="modal-card glass-card">
+            <h2 class="modal-title" id="tpl-modal-title">Nouveau template</h2>
+
+            <div class="tpl-step">
+                <p class="tpl-step-label">1. Dépose un fichier exemple de ton espace de stockage :</p>
+                <div class="tpl-drop" id="tpl-drop">
+                    <label class="upload-btn" for="tpl-file-input">Choisir un fichier</label>
+                    <input type="file" id="tpl-file-input" accept=".xlsx,.xls" hidden>
+                    <span class="file-name" id="tpl-file-name">Aucun fichier</span>
+                </div>
+            </div>
+
+            <div class="tpl-step">
+                <label class="tpl-step-label" for="tpl-header-row">En-tête sur la ligne :</label>
+                <input type="number" id="tpl-header-row" class="tpl-header-input" min="1" value="1" disabled>
+            </div>
+
+            <div class="tpl-step">
+                <p class="tpl-step-label">2. Associe chaque champ à sa colonne :</p>
+                <div id="tpl-mapping" class="tpl-mapping"></div>
+            </div>
+
+            <div class="tpl-step">
+                <label class="tpl-step-label" for="tpl-name">Nom du template :</label>
+                <input type="text" id="tpl-name" class="tpl-name-input" placeholder="Ex : Stock Partenaire X">
+            </div>
+
+            <div id="tpl-error" class="error-banner hidden"></div>
+
+            <div class="modal-actions">
+                <button type="button" id="tpl-cancel" class="btn-cancel">Annuler</button>
+                <button type="button" id="tpl-save" class="btn-primary" disabled>Enregistrer</button>
+            </div>
+        </div>
+    </div>
 
     <script src="app.js"></script>
 </body>
