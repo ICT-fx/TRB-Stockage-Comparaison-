@@ -328,7 +328,7 @@ const FIELDS = [
 ];
 
 const GUESS = {
-    sku: ["sku", "artikel", "référence", "reference", "code", "ref"],
+    sku: ["sku", "artikel", "article", "référence", "reference", "code", "ref"],
     lot: ["lot", "lagerort", "charge", "batch"],
     date: ["date", "exp", "mhd", "verfall", "péremption", "peremption", "g"],
     description: ["desc", "kurztext", "bezeichnung", "libellé", "libelle", "désignation", "designation", "produit"],
@@ -339,9 +339,18 @@ let modalState = { columns: [], fileBytes: null, editId: null, lastFile: null };
 
 function guessColumn(fieldKey, columns) {
     const kws = GUESS[fieldKey] || [];
+    // Pass 1 — exact header match (case-insensitive). Handles short headers like
+    // RK's "G" date column, which a substring match would wrongly assign to
+    // "Lagerort" (the lot column) because it also contains the letter "g".
+    for (const col of columns) {
+        const n = String(col.name).toLowerCase().trim();
+        if (kws.includes(n)) return col.index;
+    }
+    // Pass 2 — substring match, but only for keywords of 3+ chars, so
+    // single/double-letter tokens can't over-match longer column names.
     for (const col of columns) {
         const n = String(col.name).toLowerCase();
-        if (kws.some(k => n.includes(k))) return col.index;
+        if (kws.some(k => k.length >= 3 && n.includes(k))) return col.index;
     }
     return null;
 }
