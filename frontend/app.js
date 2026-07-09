@@ -37,6 +37,60 @@ let fileTheorique = null;
 let fileReel      = null;
 let lastResult    = null;
 
+// ── Templates (espace de stockage) ──────────────
+// NOTE : `layoutReel` est DÉJÀ déclaré plus haut dans app.js (ligne ~29,
+// `const layoutReel = document.getElementById("layout-reel")`). Ne pas le
+// re-déclarer ici (sinon SyntaxError : redéclaration de const).
+const btnTemplateNew   = document.getElementById("btn-template-new");
+const btnTemplateEdit  = document.getElementById("btn-template-edit");
+const btnTemplateDel   = document.getElementById("btn-template-delete");
+const LAST_TPL_KEY = "trb_last_template";
+
+const tplState = { list: [] };
+
+function selectedTemplateId() {
+    return layoutReel.value || "basic-stock";
+}
+
+async function refreshTemplates(selectId) {
+    try {
+        const res = await fetch(`${API_BASE}/templates`);
+        const data = await res.json();
+        tplState.list = data.templates || [];
+    } catch {
+        tplState.list = [{ id: "basic-stock", name: "Basic template stock", builtin: true }];
+    }
+    const remembered = selectId || localStorage.getItem(LAST_TPL_KEY) || "basic-stock";
+    const exists = tplState.list.some(t => t.id === remembered);
+    const target = exists ? remembered : "basic-stock";
+
+    layoutReel.innerHTML = tplState.list
+        .map(t => `<option value="${t.id}">${escapeHtml(t.name)}</option>`)
+        .join("");
+    layoutReel.value = target;
+    onTemplateSelectionChange();
+}
+
+function currentTemplate() {
+    return tplState.list.find(t => t.id === selectedTemplateId());
+}
+
+function onTemplateSelectionChange() {
+    const t = currentTemplate();
+    const isBuiltin = !t || t.builtin;
+    btnTemplateEdit.disabled = isBuiltin;
+    btnTemplateDel.disabled = isBuiltin;
+    localStorage.setItem(LAST_TPL_KEY, selectedTemplateId());
+}
+
+function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, c =>
+        ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+
+layoutReel.addEventListener("change", onTemplateSelectionChange);
+refreshTemplates();
+
 // ── File selection ──────────────────────────────
 function handleFileSelect(file, type) {
     if (!file) return;
@@ -88,6 +142,7 @@ btnCompare.addEventListener("click", async () => {
         const formData = new FormData();
         formData.append("file_theorique", fileTheorique);
         formData.append("file_reel", fileReel);
+        formData.append("storage_template_id", selectedTemplateId());
 
         const res = await fetch(`${API_BASE}/compare`, {
             method: "POST",
@@ -121,6 +176,7 @@ btnDownload.addEventListener("click", async () => {
         const formData = new FormData();
         formData.append("file_theorique", fileTheorique);
         formData.append("file_reel", fileReel);
+        formData.append("storage_template_id", selectedTemplateId());
 
         const res = await fetch(`${API_BASE}/compare/download`, {
             method: "POST",
