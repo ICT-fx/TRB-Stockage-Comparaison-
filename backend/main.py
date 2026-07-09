@@ -205,6 +205,54 @@ def parse_rk_lot(raw_bytes: bytes) -> tuple[list[dict], pd.DataFrame]:
     return products, df
 
 
+def parse_storage_with_template(raw_bytes: bytes, template: dict) -> tuple[list[dict], pd.DataFrame]:
+    """
+    Parse un fichier d'espace de stockage selon un template de colonnes.
+    template = {"header_row": int(1-based), "columns": {sku,lot,qty,date,description}}
+    (date/description peuvent être None). Renvoie la même structure que parse_rk_lot.
+    """
+    cols = template["columns"]
+    header_row = int(template.get("header_row", 1))
+    df = pd.read_excel(io.BytesIO(raw_bytes), header=header_row - 1)
+
+    used = [cols["sku"], cols["lot"], cols["qty"]]
+    used += [cols[k] for k in ("date", "description") if cols.get(k) is not None]
+    max_idx = max(used)
+    if len(df.columns) <= max_idx:
+        raise ValueError(
+            f"Le fichier n'a que {len(df.columns)} colonnes, "
+            f"le template en attend au moins {max_idx + 1}."
+        )
+
+    products: list[dict] = []
+    for _, row in df.iterrows():
+        code_raw = row.iloc[cols["sku"]]
+        if not _is_numeric_code(code_raw):
+            continue
+        lot = _clean_lot(row.iloc[cols["lot"]])
+        if not lot:
+            continue
+        code = _clean_code(code_raw)
+        qty_cell = row.iloc[cols["qty"]]
+        qty = int(qty_cell) if pd.notna(qty_cell) else 0
+
+        date_str = ""
+        if cols.get("date") is not None:
+            date_str = _parse_rk_date(row.iloc[cols["date"]])
+
+        desc = ""
+        if cols.get("description") is not None:
+            dv = row.iloc[cols["description"]]
+            desc = str(dv).strip() if pd.notna(dv) else ""
+
+        products.append({
+            "code": code, "lot": lot, "date": date_str,
+            "qty": qty, "description": desc,
+        })
+
+    return products, df
+
+
 # ──────────────────────────────────────────────
 # Comparison logic — SKU + Lot number
 # ──────────────────────────────────────────────
@@ -400,10 +448,10 @@ def build_excel(result: dict, df_proconcept: pd.DataFrame, df_rk: pd.DataFrame) 
 # Comparison runner
 # ──────────────────────────────────────────────
 
-def _run_comparison(theo_bytes: bytes, real_bytes: bytes) -> tuple[dict, pd.DataFrame, pd.DataFrame]:
+def _run_comparison(theo_bytes: bytes, real_bytes: bytes, storage_template: dict) -> tuple[dict, pd.DataFrame, pd.DataFrame]:
     """Parse both files and run lot-based comparison. Returns (result, df_pro, df_rk)."""
     theo_list, df_pro = parse_proconcept_lot(theo_bytes)
-    actual_list, df_rk = parse_rk_lot(real_bytes)
+    actual_list, df_rk = parse_storage_with_template(real_bytes, storage_template)
     result = compare_by_lot(theo_list, actual_list)
     return result, df_pro, df_rk
 
