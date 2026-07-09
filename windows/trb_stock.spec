@@ -59,7 +59,8 @@ hiddenimports += [
     "uvicorn.protocols.websockets.auto",
     "uvicorn.lifespan",
     "uvicorn.lifespan.on",
-    "main",  # backend/main.py, importé par launcher.py
+    "main",       # backend/main.py, importé par launcher.py
+    "templates",  # backend/templates.py, importé par main.py
 ]
 
 # backend/ sur le chemin d'analyse pour retrouver main.py

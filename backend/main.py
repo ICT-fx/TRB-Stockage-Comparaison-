@@ -17,15 +17,26 @@ from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils.dataframe import dataframe_to_rows
 
+import templates as template_store
+
 # Patch zipfile to ignore CRC-32 errors commonly found in ERP-exported Excel files
 zipfile.ZipExtFile._update_crc = lambda *args, **kwargs: None
 
 app = FastAPI(title="TRB Stock Compare API")
 
+# CORS restreint : seules les origines connues peuvent appeler l'API.
+# - le frontend hébergé (Render, sous-domaine *.onrender.com du projet) ;
+# - le poste local (l'.exe sert l'interface sur localhost:8000 ; l'ancien mode
+#   dev utilisait localhost:3000).
+# Les routes /templates modifient un état persistant : on bloque donc les sites
+# tiers. L'app n'utilise ni cookie ni session -> allow_credentials=False.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
+    allow_origin_regex=(
+        r"^https://trb-stock-compare-front[a-z0-9-]*\.onrender\.com$"
+        r"|^http://(localhost|127\.0\.0\.1):(8000|3000)$"
+    ),
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -200,6 +211,54 @@ def parse_rk_lot(raw_bytes: bytes) -> tuple[list[dict], pd.DataFrame]:
             "date": date_str,
             "qty": qty,
             "description": desc,
+        })
+
+    return products, df
+
+
+def parse_storage_with_template(raw_bytes: bytes, template: dict) -> tuple[list[dict], pd.DataFrame]:
+    """
+    Parse un fichier d'espace de stockage selon un template de colonnes.
+    template = {"header_row": int(1-based), "columns": {sku,lot,qty,date,description}}
+    (date/description peuvent être None). Renvoie la même structure que parse_rk_lot.
+    """
+    cols = template["columns"]
+    header_row = int(template.get("header_row", 1))
+    df = pd.read_excel(io.BytesIO(raw_bytes), header=header_row - 1)
+
+    used = [cols["sku"], cols["lot"], cols["qty"]]
+    used += [cols[k] for k in ("date", "description") if cols.get(k) is not None]
+    max_idx = max(used)
+    if len(df.columns) <= max_idx:
+        raise ValueError(
+            f"Le fichier n'a que {len(df.columns)} colonnes, "
+            f"le template en attend au moins {max_idx + 1}."
+        )
+
+    products: list[dict] = []
+    for _, row in df.iterrows():
+        code_raw = row.iloc[cols["sku"]]
+        if not _is_numeric_code(code_raw):
+            continue
+        lot = _clean_lot(row.iloc[cols["lot"]])
+        if not lot:
+            continue
+        code = _clean_code(code_raw)
+        qty_cell = row.iloc[cols["qty"]]
+        qty = int(qty_cell) if pd.notna(qty_cell) else 0
+
+        date_str = ""
+        if cols.get("date") is not None:
+            date_str = _parse_rk_date(row.iloc[cols["date"]])
+
+        desc = ""
+        if cols.get("description") is not None:
+            dv = row.iloc[cols["description"]]
+            desc = str(dv).strip() if pd.notna(dv) else ""
+
+        products.append({
+            "code": code, "lot": lot, "date": date_str,
+            "qty": qty, "description": desc,
         })
 
     return products, df
@@ -400,10 +459,10 @@ def build_excel(result: dict, df_proconcept: pd.DataFrame, df_rk: pd.DataFrame) 
 # Comparison runner
 # ──────────────────────────────────────────────
 
-def _run_comparison(theo_bytes: bytes, real_bytes: bytes) -> tuple[dict, pd.DataFrame, pd.DataFrame]:
+def _run_comparison(theo_bytes: bytes, real_bytes: bytes, storage_template: dict) -> tuple[dict, pd.DataFrame, pd.DataFrame]:
     """Parse both files and run lot-based comparison. Returns (result, df_pro, df_rk)."""
     theo_list, df_pro = parse_proconcept_lot(theo_bytes)
-    actual_list, df_rk = parse_rk_lot(real_bytes)
+    actual_list, df_rk = parse_storage_with_template(real_bytes, storage_template)
     result = compare_by_lot(theo_list, actual_list)
     return result, df_pro, df_rk
 
@@ -416,15 +475,19 @@ def _run_comparison(theo_bytes: bytes, real_bytes: bytes) -> tuple[dict, pd.Data
 async def compare(
     file_theorique: UploadFile = File(...),
     file_reel: UploadFile = File(...),
-    layout_theorique: str = Form("auto"),
-    layout_reel: str = Form("auto"),
+    storage_template_id: str = Form("basic-stock"),
 ):
     """Compare two Excel files and return JSON results."""
+    tpl = template_store.get_template(storage_template_id)
+    if tpl is None:
+        raise HTTPException(status_code=400, detail=f"Template introuvable : {storage_template_id}")
     try:
         theo_bytes = await file_theorique.read()
         real_bytes = await file_reel.read()
-        result, _, _ = _run_comparison(theo_bytes, real_bytes)
+        result, _, _ = _run_comparison(theo_bytes, real_bytes, tpl)
         return result
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Erreur lors du traitement : {str(e)}")
 
@@ -433,14 +496,16 @@ async def compare(
 async def compare_download(
     file_theorique: UploadFile = File(...),
     file_reel: UploadFile = File(...),
-    layout_theorique: str = Form("auto"),
-    layout_reel: str = Form("auto"),
+    storage_template_id: str = Form("basic-stock"),
 ):
     """Compare two Excel files and return an Excel report with raw data sheets."""
+    tpl = template_store.get_template(storage_template_id)
+    if tpl is None:
+        raise HTTPException(status_code=400, detail=f"Template introuvable : {storage_template_id}")
     try:
         theo_bytes = await file_theorique.read()
         real_bytes = await file_reel.read()
-        result, df_pro, df_rk = _run_comparison(theo_bytes, real_bytes)
+        result, df_pro, df_rk = _run_comparison(theo_bytes, real_bytes, tpl)
         excel_bytes = build_excel(result, df_pro, df_rk)
 
         return StreamingResponse(
@@ -448,8 +513,60 @@ async def compare_download(
             media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             headers={"Content-Disposition": "attachment; filename=comparaison_stock.xlsx"},
         )
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Erreur lors du traitement : {str(e)}")
+
+
+
+# ──────────────────────────────────────────────
+# Templates d'espace de stockage
+# ──────────────────────────────────────────────
+
+@app.get("/templates")
+async def list_templates():
+    return {"templates": template_store.all_templates()}
+
+
+@app.post("/templates")
+async def create_template_route(payload: dict):
+    try:
+        return template_store.create_template(payload)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.put("/templates/{template_id}")
+async def update_template_route(template_id: str, payload: dict):
+    try:
+        return template_store.update_template(template_id, payload)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Template introuvable.")
+
+
+@app.delete("/templates/{template_id}")
+async def delete_template_route(template_id: str):
+    try:
+        template_store.delete_template(template_id)
+        return {"ok": True}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Template introuvable.")
+
+
+@app.post("/templates/preview")
+async def preview_template(file: UploadFile = File(...), header_row: int | None = Form(None)):
+    try:
+        raw = await file.read()
+        return template_store.detect_columns(raw, header_row)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Fichier illisible : {e}")
 
 
 @app.get("/health")
