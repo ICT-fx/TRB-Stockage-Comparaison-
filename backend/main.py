@@ -466,15 +466,19 @@ def _run_comparison(theo_bytes: bytes, real_bytes: bytes, storage_template: dict
 async def compare(
     file_theorique: UploadFile = File(...),
     file_reel: UploadFile = File(...),
-    layout_theorique: str = Form("auto"),
-    layout_reel: str = Form("auto"),
+    storage_template_id: str = Form("basic-stock"),
 ):
     """Compare two Excel files and return JSON results."""
+    tpl = template_store.get_template(storage_template_id)
+    if tpl is None:
+        raise HTTPException(status_code=400, detail=f"Template introuvable : {storage_template_id}")
     try:
         theo_bytes = await file_theorique.read()
         real_bytes = await file_reel.read()
-        result, _, _ = _run_comparison(theo_bytes, real_bytes)
+        result, _, _ = _run_comparison(theo_bytes, real_bytes, tpl)
         return result
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Erreur lors du traitement : {str(e)}")
 
@@ -483,14 +487,16 @@ async def compare(
 async def compare_download(
     file_theorique: UploadFile = File(...),
     file_reel: UploadFile = File(...),
-    layout_theorique: str = Form("auto"),
-    layout_reel: str = Form("auto"),
+    storage_template_id: str = Form("basic-stock"),
 ):
     """Compare two Excel files and return an Excel report with raw data sheets."""
+    tpl = template_store.get_template(storage_template_id)
+    if tpl is None:
+        raise HTTPException(status_code=400, detail=f"Template introuvable : {storage_template_id}")
     try:
         theo_bytes = await file_theorique.read()
         real_bytes = await file_reel.read()
-        result, df_pro, df_rk = _run_comparison(theo_bytes, real_bytes)
+        result, df_pro, df_rk = _run_comparison(theo_bytes, real_bytes, tpl)
         excel_bytes = build_excel(result, df_pro, df_rk)
 
         return StreamingResponse(
@@ -498,6 +504,8 @@ async def compare_download(
             media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             headers={"Content-Disposition": "attachment; filename=comparaison_stock.xlsx"},
         )
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Erreur lors du traitement : {str(e)}")
 
