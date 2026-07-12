@@ -270,16 +270,34 @@ function renderOkTable(items) {
     `;
 }
 
+// ── Commentaires d'écart ────────────────────────
+function monthYear(dateStr) {
+    const m = /^(\d{4})-(\d{2})-\d{2}$/.exec(dateStr || "");
+    return m ? `${m[2]}/${m[1]}` : "";
+}
+
+// Pré-remplissage du commentaire d'une ligne d'écart (report « previous comment »).
+function buildCommentPrefill(stored, invDate) {
+    if (!stored || !stored.text) return "";
+    const cur = monthYear(invDate);
+    const storedM = monthYear(stored.updated);
+    if (storedM && cur && storedM === cur) return stored.text;
+    if (stored.text.startsWith("previous comment")) return `${stored.text}\n[${cur}] `;
+    return `previous comment [${storedM}]: ${stored.text}\n[${cur}] `;
+}
+
 function renderDiscrepancyTable(items) {
     const panel = document.getElementById("panel-discrepancies");
     if (!items.length) { panel.innerHTML = '<div class="empty-state">Aucun écart détecté.</div>'; return; }
 
+    const inv = inventoryDate.value || "";
     panel.innerHTML = `
         <table class="result-table">
-            <thead><tr><th>Code</th><th>N° de lot</th><th>Date Proconcept</th><th>Date RK</th><th>Description</th><th>Qté Proconcept</th><th>Qté Réelle</th><th>Delta</th></tr></thead>
+            <thead><tr><th>Code</th><th>N° de lot</th><th>Date Proconcept</th><th>Date RK</th><th>Description</th><th>Qté Proconcept</th><th>Qté Réelle</th><th>Delta</th><th>Commentaire</th></tr></thead>
             <tbody>${items.map(i => {
                 const cls = i.delta > 0 ? 'delta-positive' : 'delta-negative';
                 const sign = i.delta > 0 ? '+' : '';
+                const prefill = buildCommentPrefill(i.stored_comment, inv);
                 return `
                 <tr>
                     <td class="code-cell">${i.code}</td>
@@ -290,10 +308,13 @@ function renderDiscrepancyTable(items) {
                     <td class="qty-cell">${i.qty_theorique.toLocaleString('fr-FR')}</td>
                     <td class="qty-cell">${i.qty_reel.toLocaleString('fr-FR')}</td>
                     <td class="delta-cell ${cls}">${sign}${i.delta.toLocaleString('fr-FR')}</td>
+                    <td class="comment-cell"><textarea class="comment-box" rows="2" data-code="${i.code}" data-lot="${i.lot || ''}">${escapeHtml(prefill)}</textarea></td>
                 </tr>`;
             }).join('')}</tbody>
         </table>
     `;
+    // Mémoriser la valeur initiale de chaque champ (pour détecter les modifs).
+    panel.querySelectorAll(".comment-box").forEach(box => { box.dataset.initial = box.value; });
 }
 
 
