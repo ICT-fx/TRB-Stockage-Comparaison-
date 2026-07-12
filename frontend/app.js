@@ -240,6 +240,12 @@ function renderResults(data) {
     renderOkTable(data.ok);
     renderDiscrepancyTable(data.discrepancies);
 
+    // Onglet Écarts affiché par défaut
+    tabsBar.querySelectorAll(".tab").forEach(t =>
+        t.classList.toggle("active", t.dataset.tab === "discrepancies"));
+    document.querySelectorAll(".tab-panel").forEach(p =>
+        p.classList.toggle("active", p.id === "panel-discrepancies"));
+
     // Scroll to results
     resultsSection.scrollIntoView({ behavior: "smooth", block: "start" });
 }
