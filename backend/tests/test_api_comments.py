@@ -65,3 +65,24 @@ def test_empty_comment_deletes(client):
     client.post("/comments", json={"code": "1", "lot": "2", "text": "  ", "inventory_date": "2026-07-31"})
     import comments
     assert comments.get_comment("1", "2") is None
+
+
+def test_download_includes_comment_column(client):
+    client.post("/comments", json={
+        "code": "1349", "lot": "462994",
+        "text": "écart vérifié\n[07/2026] résolu", "inventory_date": "2026-07-31"})
+    r = client.post("/compare/download", files=_files())
+    assert r.status_code == 200
+    wb = load_workbook(io.BytesIO(r.content))
+    ws = wb["Écarts"]
+    headers = [c.value for c in ws[1]]
+    assert headers[-1] == "Commentaire"
+    ccol = len(headers)
+    found = None
+    for row in ws.iter_rows(min_row=2):
+        if str(row[0].value) == "1349":
+            found = row[ccol - 1].value
+    assert found is not None and "écart vérifié" in found
+    # OK sheet must NOT have a Commentaire column
+    ok_headers = [c.value for c in wb["OK"][1]]
+    assert "Commentaire" not in ok_headers
