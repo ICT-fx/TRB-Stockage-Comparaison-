@@ -61,6 +61,7 @@ hiddenimports += [
     "uvicorn.lifespan.on",
     "main",       # backend/main.py, importé par launcher.py
     "templates",  # backend/templates.py, importé par main.py
+    "comments",   # backend/comments.py, importé par main.py
 ]
 
 # backend/ sur le chemin d'analyse pour retrouver main.py
