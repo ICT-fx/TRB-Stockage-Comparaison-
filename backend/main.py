@@ -18,6 +18,7 @@ from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils.dataframe import dataframe_to_rows
 
 import templates as template_store
+import comments as comment_store
 
 # Patch zipfile to ignore CRC-32 errors commonly found in ERP-exported Excel files
 zipfile.ZipExtFile._update_crc = lambda *args, **kwargs: None
@@ -485,6 +486,8 @@ async def compare(
         theo_bytes = await file_theorique.read()
         real_bytes = await file_reel.read()
         result, _, _ = _run_comparison(theo_bytes, real_bytes, tpl)
+        for d in result["discrepancies"]:
+            d["stored_comment"] = comment_store.get_comment(d["code"], d["lot"])
         return result
     except HTTPException:
         raise
@@ -567,6 +570,18 @@ async def preview_template(file: UploadFile = File(...), header_row: int | None 
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Fichier illisible : {e}")
+
+
+@app.post("/comments")
+async def save_comment_route(payload: dict):
+    code = str(payload.get("code", "")).strip()
+    lot = str(payload.get("lot", "")).strip()
+    if not code or not lot:
+        raise HTTPException(status_code=400, detail="code et lot sont obligatoires.")
+    text = payload.get("text", "")
+    updated = str(payload.get("inventory_date", ""))
+    comment_store.set_comment(code, lot, text, updated)
+    return {"ok": True}
 
 
 @app.get("/health")
