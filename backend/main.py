@@ -588,8 +588,8 @@ async def preview_template(file: UploadFile = File(...), header_row: int | None 
 
 @app.post("/comments")
 async def save_comment_route(payload: dict):
-    code = str(payload.get("code", "")).strip()
-    lot = str(payload.get("lot", "")).strip()
+    code = str(payload.get("code") or "").strip()
+    lot = str(payload.get("lot") or "").strip()
     if not code or not lot:
         raise HTTPException(status_code=400, detail="code et lot sont obligatoires.")
     text = payload.get("text", "")

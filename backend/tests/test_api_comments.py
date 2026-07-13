@@ -60,6 +60,10 @@ def test_save_comment_requires_code_and_lot(client):
     assert client.post("/comments", json={"code": "x", "lot": "", "text": "a"}).status_code == 400
 
 
+def test_save_comment_null_code_returns_400(client):
+    assert client.post("/comments", json={"code": None, "lot": "x", "text": "a"}).status_code == 400
+
+
 def test_empty_comment_deletes(client):
     client.post("/comments", json={"code": "1", "lot": "2", "text": "note", "inventory_date": "2026-06-30"})
     client.post("/comments", json={"code": "1", "lot": "2", "text": "  ", "inventory_date": "2026-07-31"})

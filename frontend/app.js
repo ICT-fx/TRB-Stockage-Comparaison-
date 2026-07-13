@@ -110,9 +110,10 @@ async function saveComment(box) {
     } catch { /* réseau indisponible : on réessaiera à la prochaine perte de focus */ }
 }
 
+let pendingCommentSave = Promise.resolve();
 document.getElementById("panel-discrepancies").addEventListener("focusout", (e) => {
     if (e.target.classList && e.target.classList.contains("comment-box")) {
-        saveComment(e.target);
+        pendingCommentSave = saveComment(e.target);
     }
 });
 
@@ -198,11 +199,9 @@ btnDownload.addEventListener("click", async () => {
     btnDownload.textContent = "⏳ Génération…";
 
     try {
-        // Enregistrer le commentaire en cours d'édition avant l'export.
-        const active = document.activeElement;
-        if (active && active.classList && active.classList.contains("comment-box")) {
-            await saveComment(active);
-        }
+        // Le clic sur Télécharger fait perdre le focus au champ commentaire
+        // (focusout) et déclenche son enregistrement : on l'attend avant l'export.
+        await pendingCommentSave;
 
         const formData = new FormData();
         formData.append("file_theorique", fileTheorique);
@@ -312,7 +311,8 @@ function buildCommentPrefill(stored, invDate) {
     if (!stored || !stored.text) return "";
     const cur = monthYear(invDate);
     const storedM = monthYear(stored.updated);
-    if (storedM && cur && storedM === cur) return stored.text;
+    if (!cur) return stored.text;  // pas de date d'inventaire exploitable
+    if (storedM && storedM === cur) return stored.text;
     if (stored.text.startsWith("previous comment")) return `${stored.text}\n[${cur}] `;
     return `previous comment [${storedM}]: ${stored.text}\n[${cur}] `;
 }
