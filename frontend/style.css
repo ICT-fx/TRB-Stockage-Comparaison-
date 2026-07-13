@@ -754,3 +754,24 @@ body {
     outline-offset: 4px;
 }
 .modal-actions .btn-primary { width: auto; padding: 10px 20px; margin: 0; }
+
+/* ── Commentaires d'écart ──────────────────────── */
+.comment-cell { min-width: 240px; }
+.comment-box {
+    width: 100%;
+    min-width: 210px;
+    padding: 6px 8px;
+    border-radius: 6px;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    background: rgba(255, 255, 255, 0.06);
+    color: #fff;
+    font-family: inherit;
+    font-size: 0.85rem;
+    line-height: 1.35;
+    resize: vertical;
+}
+.comment-box:focus {
+    outline: none;
+    border-color: #4da3ff;
+    background: rgba(255, 255, 255, 0.1);
+}
