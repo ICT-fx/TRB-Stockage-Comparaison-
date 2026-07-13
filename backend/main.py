@@ -18,6 +18,7 @@ from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils.dataframe import dataframe_to_rows
 
 import templates as template_store
+import comments as comment_store
 
 # Patch zipfile to ignore CRC-32 errors commonly found in ERP-exported Excel files
 zipfile.ZipExtFile._update_crc = lambda *args, **kwargs: None
@@ -410,8 +411,9 @@ def _write_raw_sheet(wb: Workbook, title: str, df: pd.DataFrame, fill_color: str
     _auto_width(ws)
 
 
-def build_excel(result: dict, df_proconcept: pd.DataFrame, df_rk: pd.DataFrame) -> bytes:
+def build_excel(result: dict, df_proconcept: pd.DataFrame, df_rk: pd.DataFrame, comments_map: dict | None = None) -> bytes:
     """Build a styled .xlsx workbook from comparison results + raw source sheets."""
+    comments_map = comments_map or {}
     wb = Workbook()
 
     headers_base = ["Code", "N° de lot", "Date Proconcept", "Date RK", "Description", "Qté Proconcept", "Qté Réelle", "Delta"]
@@ -430,18 +432,26 @@ def build_excel(result: dict, df_proconcept: pd.DataFrame, df_rk: pd.DataFrame) 
     _style_header(ws_ok, _GREEN, len(headers_base))
     _auto_width(ws_ok)
 
-    # ── Écarts ──
+    # ── Écarts ── (avec colonne Commentaire)
     ws_disc = wb.create_sheet("Écarts")
-    ws_disc.append(headers_base)
+    headers_disc = headers_base + ["Commentaire"]
+    ws_disc.append(headers_disc)
     for item in result["discrepancies"]:
         ws_disc.append([
             item["code"], item["lot"],
             item.get("date_proconcept", ""), item.get("date_rk", ""),
             item.get("description_theorique") or item.get("description_reel", ""),
             item["qty_theorique"], item["qty_reel"], item["delta"],
+            comments_map.get(f'{item["code"]}|{item["lot"]}', ""),
         ])
-    _style_header(ws_disc, _ORANGE, len(headers_base))
+    _style_header(ws_disc, _ORANGE, len(headers_disc))
     _auto_width(ws_disc)
+    # Colonne Commentaire : large + retour à la ligne
+    ccell = ws_disc.cell(row=1, column=len(headers_disc))
+    ws_disc.column_dimensions[ccell.column_letter].width = 50
+    for r in range(2, ws_disc.max_row + 1):
+        ws_disc.cell(row=r, column=len(headers_disc)).alignment = Alignment(
+            horizontal="left", vertical="top", wrap_text=True)
 
     # ── Données brutes Proconcept ──
     _write_raw_sheet(wb, "Données Proconcept", df_proconcept, _TRB_BLUE)
@@ -485,6 +495,8 @@ async def compare(
         theo_bytes = await file_theorique.read()
         real_bytes = await file_reel.read()
         result, _, _ = _run_comparison(theo_bytes, real_bytes, tpl)
+        for d in result["discrepancies"]:
+            d["stored_comment"] = comment_store.get_comment(d["code"], d["lot"])
         return result
     except HTTPException:
         raise
@@ -506,7 +518,12 @@ async def compare_download(
         theo_bytes = await file_theorique.read()
         real_bytes = await file_reel.read()
         result, df_pro, df_rk = _run_comparison(theo_bytes, real_bytes, tpl)
-        excel_bytes = build_excel(result, df_pro, df_rk)
+        comments_map = {}
+        for d in result["discrepancies"]:
+            c = comment_store.get_comment(d["code"], d["lot"])
+            if c:
+                comments_map[f'{d["code"]}|{d["lot"]}'] = c["text"]
+        excel_bytes = build_excel(result, df_pro, df_rk, comments_map)
 
         return StreamingResponse(
             io.BytesIO(excel_bytes),
@@ -567,6 +584,18 @@ async def preview_template(file: UploadFile = File(...), header_row: int | None 
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Fichier illisible : {e}")
+
+
+@app.post("/comments")
+async def save_comment_route(payload: dict):
+    code = str(payload.get("code") or "").strip()
+    lot = str(payload.get("lot") or "").strip()
+    if not code or not lot:
+        raise HTTPException(status_code=400, detail="code et lot sont obligatoires.")
+    text = payload.get("text", "")
+    updated = str(payload.get("inventory_date", ""))
+    comment_store.set_comment(code, lot, text, updated)
+    return {"ok": True}
 
 
 @app.get("/health")

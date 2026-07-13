@@ -91,6 +91,32 @@ function escapeHtml(s) {
 layoutReel.addEventListener("change", onTemplateSelectionChange);
 refreshTemplates();
 
+// ── Enregistrement des commentaires d'écart ─────
+async function saveComment(box) {
+    if (!box || box.value === box.dataset.initial) return;  // inchangé
+    const payload = {
+        code: box.dataset.code,
+        lot: box.dataset.lot,
+        text: box.value,
+        inventory_date: inventoryDate.value || "",
+    };
+    try {
+        await fetch(`${API_BASE}/comments`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+        });
+        box.dataset.initial = box.value;
+    } catch { /* réseau indisponible : on réessaiera à la prochaine perte de focus */ }
+}
+
+let pendingCommentSave = Promise.resolve();
+document.getElementById("panel-discrepancies").addEventListener("focusout", (e) => {
+    if (e.target.classList && e.target.classList.contains("comment-box")) {
+        pendingCommentSave = saveComment(e.target);
+    }
+});
+
 // ── File selection ──────────────────────────────
 function handleFileSelect(file, type) {
     if (!file) return;
@@ -173,6 +199,10 @@ btnDownload.addEventListener("click", async () => {
     btnDownload.textContent = "⏳ Génération…";
 
     try {
+        // Le clic sur Télécharger fait perdre le focus au champ commentaire
+        // (focusout) et déclenche son enregistrement : on l'attend avant l'export.
+        await pendingCommentSave;
+
         const formData = new FormData();
         formData.append("file_theorique", fileTheorique);
         formData.append("file_reel", fileReel);
@@ -240,6 +270,12 @@ function renderResults(data) {
     renderOkTable(data.ok);
     renderDiscrepancyTable(data.discrepancies);
 
+    // Onglet Écarts affiché par défaut
+    tabsBar.querySelectorAll(".tab").forEach(t =>
+        t.classList.toggle("active", t.dataset.tab === "discrepancies"));
+    document.querySelectorAll(".tab-panel").forEach(p =>
+        p.classList.toggle("active", p.id === "panel-discrepancies"));
+
     // Scroll to results
     resultsSection.scrollIntoView({ behavior: "smooth", block: "start" });
 }
@@ -264,16 +300,35 @@ function renderOkTable(items) {
     `;
 }
 
+// ── Commentaires d'écart ────────────────────────
+function monthYear(dateStr) {
+    const m = /^(\d{4})-(\d{2})-\d{2}$/.exec(dateStr || "");
+    return m ? `${m[2]}/${m[1]}` : "";
+}
+
+// Pré-remplissage du commentaire d'une ligne d'écart (report « previous comment »).
+function buildCommentPrefill(stored, invDate) {
+    if (!stored || !stored.text) return "";
+    const cur = monthYear(invDate);
+    const storedM = monthYear(stored.updated);
+    if (!cur) return stored.text;  // pas de date d'inventaire exploitable
+    if (storedM && storedM === cur) return stored.text;
+    if (stored.text.startsWith("previous comment")) return `${stored.text}\n[${cur}] `;
+    return `previous comment [${storedM}]: ${stored.text}\n[${cur}] `;
+}
+
 function renderDiscrepancyTable(items) {
     const panel = document.getElementById("panel-discrepancies");
     if (!items.length) { panel.innerHTML = '<div class="empty-state">Aucun écart détecté.</div>'; return; }
 
+    const inv = inventoryDate.value || "";
     panel.innerHTML = `
         <table class="result-table">
-            <thead><tr><th>Code</th><th>N° de lot</th><th>Date Proconcept</th><th>Date RK</th><th>Description</th><th>Qté Proconcept</th><th>Qté Réelle</th><th>Delta</th></tr></thead>
+            <thead><tr><th>Code</th><th>N° de lot</th><th>Date Proconcept</th><th>Date RK</th><th>Description</th><th>Qté Proconcept</th><th>Qté Réelle</th><th>Delta</th><th>Commentaire</th></tr></thead>
             <tbody>${items.map(i => {
                 const cls = i.delta > 0 ? 'delta-positive' : 'delta-negative';
                 const sign = i.delta > 0 ? '+' : '';
+                const prefill = buildCommentPrefill(i.stored_comment, inv);
                 return `
                 <tr>
                     <td class="code-cell">${i.code}</td>
@@ -284,10 +339,13 @@ function renderDiscrepancyTable(items) {
                     <td class="qty-cell">${i.qty_theorique.toLocaleString('fr-FR')}</td>
                     <td class="qty-cell">${i.qty_reel.toLocaleString('fr-FR')}</td>
                     <td class="delta-cell ${cls}">${sign}${i.delta.toLocaleString('fr-FR')}</td>
+                    <td class="comment-cell"><textarea class="comment-box" rows="2" data-code="${i.code}" data-lot="${i.lot || ''}">${escapeHtml(prefill)}</textarea></td>
                 </tr>`;
             }).join('')}</tbody>
         </table>
     `;
+    // Mémoriser la valeur initiale de chaque champ (pour détecter les modifs).
+    panel.querySelectorAll(".comment-box").forEach(box => { box.dataset.initial = box.value; });
 }
 
 
