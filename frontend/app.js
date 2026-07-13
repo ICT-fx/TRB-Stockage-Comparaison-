@@ -91,6 +91,31 @@ function escapeHtml(s) {
 layoutReel.addEventListener("change", onTemplateSelectionChange);
 refreshTemplates();
 
+// ── Enregistrement des commentaires d'écart ─────
+async function saveComment(box) {
+    if (!box || box.value === box.dataset.initial) return;  // inchangé
+    const payload = {
+        code: box.dataset.code,
+        lot: box.dataset.lot,
+        text: box.value,
+        inventory_date: inventoryDate.value || "",
+    };
+    try {
+        await fetch(`${API_BASE}/comments`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+        });
+        box.dataset.initial = box.value;
+    } catch { /* réseau indisponible : on réessaiera à la prochaine perte de focus */ }
+}
+
+document.getElementById("panel-discrepancies").addEventListener("focusout", (e) => {
+    if (e.target.classList && e.target.classList.contains("comment-box")) {
+        saveComment(e.target);
+    }
+});
+
 // ── File selection ──────────────────────────────
 function handleFileSelect(file, type) {
     if (!file) return;
@@ -173,6 +198,12 @@ btnDownload.addEventListener("click", async () => {
     btnDownload.textContent = "⏳ Génération…";
 
     try {
+        // Enregistrer le commentaire en cours d'édition avant l'export.
+        const active = document.activeElement;
+        if (active && active.classList && active.classList.contains("comment-box")) {
+            await saveComment(active);
+        }
+
         const formData = new FormData();
         formData.append("file_theorique", fileTheorique);
         formData.append("file_reel", fileReel);
